@@ -9,12 +9,12 @@
 NapCat + NoneBot2 + OneBot v11  
 不用装 Python，不用改配置文件，不用开命令行
 
-[**下载 QAI 1.0**](https://github.com/Algorandius/QAI/releases/latest) ·
+[**下载 QAI 1.0.1**](https://github.com/Algorandius/QAI/releases/latest) ·
 [使用教程](新手教程.md) ·
 [问题反馈](https://github.com/Algorandius/QAI/issues)
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)
-![Version](https://img.shields.io/badge/version-1.0-6C5CE7)
+![Version](https://img.shields.io/badge/version-1.0.1-6C5CE7)
 ![License](https://img.shields.io/badge/license-MIT-2ECC71)
 
 </div>
