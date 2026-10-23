@@ -181,6 +181,15 @@
         <p class="hint">开启后，长按卡片可拖动排序；鼠标移到卡片右下角可拖动缩放，松手保存为默认布局；同一网格的其他卡片会自动重排。</p>
       </div>
 
+      <div class="setting-group">
+        <div class="setting-title">新手向导</div>
+        <div class="switch-row">
+          <div><b>悬浮教程向导</b><span>彩色圆球置顶显示，可拖动、点击看教程、右键关闭</span></div>
+          <button class="btn btn-ghost btn-sm" id="wakeGuide" type="button">唤醒向导</button>
+        </div>
+        <p class="hint">唤醒后会出现在整个 QAI 窗口最上层；位置会自动记住。</p>
+      </div>
+
       <div class="modal-actions">
         <button class="btn btn-primary" id="appearanceDone" type="button">完成</button>
       </div>
@@ -209,13 +218,20 @@
       <div class="install-box">
         <div class="install-head">
           <div><b>NapCat</b><span class="muted">默认安装到 QAI\napcat</span></div>
-          <button class="btn btn-primary btn-sm" id="setupNapcatInstall" type="button">安装到 QAI 目录</button>
+          <div class="install-actions">
+            <button class="btn btn-ghost btn-sm" id="setupNapcatQuick" type="button">一键连接</button>
+            <button class="btn btn-ghost btn-sm" id="setupNapcatPan" type="button">夸克网盘</button>
+            <button class="btn btn-primary btn-sm" id="setupNapcatInstall" type="button">安装到 QAI 目录</button>
+          </div>
         </div>
         <div class="install-progress"><i id="setupNapcatBar"></i></div>
-        <div class="hint" id="setupNapcatState">从 GitHub 下载最新 Windows Node 包，约 120MB；安装后仍需扫码登录 QQ。</div>
-        <div class="hint">下载失败时，可手动打开
-          <a href="https://github.com/NapNeko/NapCatQQ/releases" target="_blank" rel="noreferrer">NapCat 官方下载页</a>，
-          解压后在下方选择包含 <code>launcher-win10.bat</code> 的目录。</div>
+        <div class="hint" id="setupNapcatState">从 GitHub 下载最新 Windows Node 包，约 120MB；如果 QAI 一直显示「等待连接」，可点「一键连接」自动写入反向 WebSocket 配置。</div>
+        <div class="hint">国内用户建议点上方「夸克网盘」下载。下载后解压，再在下方选择包含 <code>launcher-win10.bat</code> 的目录。</div>
+        <div class="hint">按钮打不开时，直接复制这个地址到浏览器：
+          <a href="https://pan.quark.cn/s/3dc6f10f0ebd" target="_blank" rel="noreferrer">夸克网盘链接</a>
+        </div>
+        <div class="hint">也可以手动打开
+          <a href="https://github.com/NapNeko/NapCatQQ/releases" target="_blank" rel="noreferrer">NapCat 官方下载页</a>。</div>
       </div>
 
       <div class="privacy-note">
@@ -279,6 +295,19 @@
   </div>
 </div>
 
+<div id="guideOrb" class="guide-orb hidden" role="button" tabindex="0" aria-label="打开新手教程，拖动可移动，右键可关闭" title="拖动移动 · 点击看教程 · 右键关闭">
+  <span class="guide-orb-halo" aria-hidden="true"></span>
+  <span class="guide-orb-mark" aria-hidden="true">?</span>
+</div>
+<div id="guideMenuBackdrop" class="guide-menu-backdrop hidden"></div>
+<div id="guideMenu" class="guide-menu hidden" role="dialog" aria-label="关闭新手向导">
+  <p>要关闭新手向导吗？</p>
+  <div class="guide-menu-actions">
+    <button class="btn btn-ghost btn-sm" id="guideNo" type="button">否</button>
+    <button class="btn btn-primary btn-sm" id="guideYes" type="button">是</button>
+  </div>
+</div>
+
 <div id="tutorialModal" class="modal-backdrop hidden">
   <div class="modal tutorial-modal" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
     <div class="modal-head">
@@ -288,7 +317,7 @@
     <div class="modal-body tutorial-body" id="tutorialBody">
       <div class="empty-state">正在加载教程…</div>
     </div>
-    <div class="modal-actions">
+    <div class="modal-actions tutorial-footer" id="tutorialFooter">
       <button class="btn btn-primary" id="tutorialDone" type="button">开始使用</button>
     </div>
   </div>

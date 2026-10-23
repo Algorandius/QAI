@@ -36,22 +36,35 @@ _ROOT = _BASE[:-3] if _BASE.endswith("/v1") else _BASE
 _KEY = env("LLM_API_KEY", "")
 
 
-def enabled() -> bool:
-    """只有 DeepSeek 官方 API 才有这两个接口；换别家（智谱/硅基流动）自动关掉。"""
-    return bool(WEB_TOOL and _KEY and "deepseek.com" in _ROOT)
+def _root_for(base_url: str | None = None) -> str:
+    base = (base_url or _BASE).rstrip("/")
+    return base[:-3] if base.endswith("/v1") else base
 
 
-def _headers() -> dict[str, str]:
-    return {"Authorization": f"Bearer {_KEY}", "Content-Type": "application/json"}
+def enabled(api_key: str | None = None, base_url: str | None = None) -> bool:
+    """只有 DeepSeek 官方 API 才有这两个接口。"""
+    key = _KEY if api_key is None else api_key
+    root = _root_for(base_url)
+    return bool(WEB_TOOL and key and "deepseek.com" in root)
 
 
-async def search(query: str, count: int = 5) -> list[dict[str, Any]]:
+def _headers(api_key: str | None = None) -> dict[str, str]:
+    key = _KEY if api_key is None else api_key
+    return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+
+async def search(
+    query: str,
+    count: int = 5,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> list[dict[str, Any]]:
     """按关键词搜网页，返回结果列表（失败返回空列表，不抛异常）。"""
-    if not enabled() or not query.strip():
+    if not enabled(api_key, base_url) or not query.strip():
         return []
     try:
         async with httpx.AsyncClient(timeout=WEB_TIMEOUT, trust_env=False) as c:
-            r = await c.post(f"{_ROOT}/v1/tools/search", headers=_headers(), json={
+            r = await c.post(f"{_root_for(base_url)}/v1/tools/search", headers=_headers(api_key), json={
                 "query": query[:128],
                 "count": max(1, min(50, count)),
                 "need_content": False,
@@ -65,13 +78,17 @@ async def search(query: str, count: int = 5) -> list[dict[str, Any]]:
         return []
 
 
-async def fetch(url: str) -> dict[str, Any] | None:
+async def fetch(
+    url: str,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> dict[str, Any] | None:
     """抓一个网页的正文（Markdown）。失败返回 None。"""
-    if not enabled() or not url.startswith("http"):
+    if not enabled(api_key, base_url) or not url.startswith("http"):
         return None
     try:
         async with httpx.AsyncClient(timeout=WEB_TIMEOUT, trust_env=False) as c:
-            r = await c.post(f"{_ROOT}/v1/tools/fetch", headers=_headers(), json={"url": url})
+            r = await c.post(f"{_root_for(base_url)}/v1/tools/fetch", headers=_headers(api_key), json={"url": url})
         if r.status_code != 200:
             logger.warning(f"[web] fetch HTTP {r.status_code}: {r.text[:150]}")
             return None

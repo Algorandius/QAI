@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -533,6 +534,27 @@ def stop_bot() -> dict:
         return {"ok": True, "message": "机器人已停止"}
 
 
+def shutdown_launcher() -> None:
+    """关闭窗口时同步停止机器人，然后退出启动器。"""
+    result = {}
+    try:
+        result = stop_bot()
+    except Exception as e:
+        log(f"[launcher] 关闭时停止机器人失败: {e}")
+    if not result.get("ok"):
+        # stop_bot 超时也强制清掉 8080/8081，避免机器人留在后台。
+        for port in (BOT_PORT, PANEL_PORT):
+            pid = pid_on_port(port)
+            if pid:
+                _taskkill(pid)
+    try:
+        (ROOT / "data" / "qai_window.pid").unlink(missing_ok=True)
+    except Exception:
+        pass
+    log("[launcher] 窗口关闭，机器人已停止，启动器退出")
+    os._exit(0)
+
+
 def restart_bot() -> dict:
     stop_bot()
     time.sleep(0.6)
@@ -748,6 +770,121 @@ def start_napcat_install() -> dict:
     return {"ok": True, "message": "开始安装 NapCat；下载约 120MB，请稍候", "state": napcat_install_status()}
 
 
+def _apply_onebot_config(cfg_path: Path, url: str, token: str) -> None:
+    raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise ValueError(f"{cfg_path.name} 不是 JSON 对象")
+    network = raw.setdefault("network", {})
+    if not isinstance(network, dict):
+        raise ValueError(f"{cfg_path.name} 的 network 字段格式不正确")
+    clients = network.setdefault("websocketClients", [])
+    if not isinstance(clients, list):
+        raise ValueError(f"{cfg_path.name} 的 websocketClients 字段格式不正确")
+
+    target = next(
+        (
+            c for c in clients
+            if isinstance(c, dict)
+            and (
+                "onebot/v11/ws" in str(c.get("url") or "")
+                or str(c.get("name") or "").lower() in ("qai", "nonebot2", "bot1")
+            )
+        ),
+        None,
+    )
+    if target is None:
+        target = {
+            "name": "QAI",
+            "enable": True,
+            "url": url,
+            "reportSelfMessage": False,
+            "messagePostFormat": "array",
+            "token": token,
+            "debug": False,
+            "heartInterval": 30000,
+            "reconnectInterval": 5000,
+            "verifyCertificate": True,
+        }
+        clients.append(target)
+    else:
+        target.update({
+            "enable": True,
+            "url": url,
+            "token": token,
+            "messagePostFormat": "array",
+            "reportSelfMessage": False,
+        })
+
+    backup = cfg_path.with_name(cfg_path.name + ".qai.bak")
+    shutil.copy2(cfg_path, backup)
+    tmp = cfg_path.with_name(cfg_path.name + ".tmp")
+    tmp.write_text(json.dumps(raw, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(cfg_path)
+
+
+def quick_connect_onebot() -> dict:
+    """把当前 QQ 的 NapCat 配置改成 QAI 的反向 WebSocket。"""
+    global ENV
+    env = reload_env()
+    token = str(env.get("ONEBOT_ACCESS_TOKEN") or "").strip()
+    token_changed = False
+    if not token:
+        token = "qai-" + secrets.token_hex(8)
+        _update_env({"ONEBOT_ACCESS_TOKEN": token})
+        env = reload_env()
+        token_changed = True
+
+    bot_port = _env_int("PORT", 8080)
+    # 配置写入前重启一次机器人，确保它读到的就是当前 ONEBOT_ACCESS_TOKEN
+    result = restart_bot()
+    if not result.get("ok"):
+        return {"ok": False, "error": result.get("error") or "机器人重启失败，未写入 NapCat 配置"}
+
+    was_running = port_open(NAPCAT_PORT)
+    if was_running:
+        stopped = stop_napcat()
+        if not stopped.get("ok"):
+            return {"ok": False, "error": "需要先停止 NapCat 才能写入配置：" + str(stopped.get("error") or "")}
+        time.sleep(0.8)
+
+    config_dir = NAPCAT_DIR / "config"
+    candidates = sorted(
+        list(config_dir.glob("onebot11_*.json")) + list(config_dir.glob("onebot11.json")),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    ) if config_dir.is_dir() else []
+    if not candidates:
+        return {
+            "ok": False,
+            "error": "没有找到 NapCat 的 onebot11 配置。请先启动 NapCat 并完成 QQ 登录。",
+        }
+
+    url = f"ws://127.0.0.1:{bot_port}/onebot/v11/ws"
+    written: list[str] = []
+    for cfg_path in candidates:
+        try:
+            _apply_onebot_config(cfg_path, url, token)
+            written.append(str(cfg_path))
+        except Exception as e:
+            return {"ok": False, "error": f"写入 {cfg_path.name} 失败：{e}"}
+
+    if was_running or not port_open(NAPCAT_PORT):
+        started = start_napcat()
+        if not started.get("ok"):
+            return {"ok": False, "error": f"配置已写入，但启动 NapCat 失败：{started.get('error')}"}
+
+    log(f"[launcher] OneBot 快捷连接已写入 {len(written)} 个配置（port={bot_port}）")
+    return {
+        "ok": True,
+        "message": f"已写入 {len(written)} 个 NapCat 账号配置",
+        "config": written[0] if written else "",
+        "configs": written,
+        "token_changed": token_changed,
+        "napcat_running": port_open(NAPCAT_PORT),
+        "restart_needed": False,
+    }
+
+
 # ---------------------------------------------------------------- HTTP
 def _send_json(h, code: int, obj) -> None:
     body = json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8")
@@ -833,6 +970,24 @@ class _Handler(BaseHTTPRequestHandler):
         if u.path == "/api/napcat/token":
             _send_json(self, 200, napcat_token_info())
             return
+        if u.path == "/api/napcat/pan":
+            url = "https://pan.quark.cn/s/3dc6f10f0ebd"
+            opened = False
+            try:
+                opened = bool(webbrowser.open(url))
+            except Exception:
+                opened = False
+            if not opened:
+                try:
+                    os.startfile(url)  # type: ignore[attr-defined]
+                    opened = True
+                except Exception:
+                    opened = False
+            if opened:
+                _send_json(self, 200, {"ok": True, "url": url})
+            else:
+                _send_json(self, 500, {"ok": False, "error": "系统没有可用的浏览器，请手动复制链接", "url": url})
+            return
         if u.path == "/api/napcat/install/status":
             _send_json(self, 200, {"ok": True, **napcat_install_status()})
             return
@@ -855,6 +1010,10 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         try:
+            if u.path == "/api/shutdown":
+                _send_json(self, 200, {"ok": True, "message": "启动器正在退出"})
+                threading.Timer(0.3, shutdown_launcher).start()
+                return
             if u.path == "/api/start":
                 _send_json(self, 200, start_bot())
                 return
@@ -869,6 +1028,9 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if u.path == "/api/napcat/install":
                 _send_json(self, 200, start_napcat_install())
+                return
+            if u.path == "/api/napcat/quick-connect":
+                _send_json(self, 200, quick_connect_onebot())
                 return
             if u.path == "/api/napcat/stop":
                 _send_json(self, 200, stop_napcat())

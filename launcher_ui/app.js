@@ -424,7 +424,7 @@ async function openSetup() {
       ? "API Key 已配置；留空会保持不变。保存后如果机器人正在运行，会重启一次使配置生效。"
       : "保存后会写入 `.env`，并自动启动机器人。";
     $("#setupNapcatBar").style.width = "0%";
-    $("#setupNapcatState").textContent = "从 GitHub 下载最新 Windows Node 包，约 120MB；安装后仍需扫码登录 QQ。";
+    $("#setupNapcatState").textContent = "从 GitHub 下载最新 Windows Node 包，约 120MB；如果 QAI 一直显示「等待连接」，可点「一键连接」自动写入反向 WebSocket 配置。";
     $("#setupModal").classList.remove("hidden");
     if (!st.napcat_ok) detectNapcat();
     checkNapcatInstall();
@@ -451,6 +451,43 @@ async function startNapcatInstall() {
   } catch (e) {
     btn.disabled = false;
     $("#setupNapcatState").textContent = "安装失败：" + e.message;
+  }
+}
+
+async function openNapcatPan() {
+  try {
+    const r = await api("/api/napcat/pan");
+    toast(r.url ? "已在浏览器打开夸克网盘" : "已打开夸克网盘");
+  } catch (e) {
+    toast("打开网盘失败：" + e.message, "error");
+  }
+}
+
+async function quickConnectOnebot() {  if (!await qaiConfirm(
+    "会自动检查 NapCat 的 OneBot 配置，并写入 QAI 的反向 WebSocket 地址和 Token。\n不会修改 QQ 登录，也不会重新扫码。",
+    { title: "一键连接 OneBot", okText: "开始检查" },
+  )) return;
+  const btn = $("#setupNapcatQuick");
+  btn.disabled = true;
+  $("#setupNapcatState").textContent = "正在检查 NapCat 配置和 8080 端口…";
+  try {
+    const r = await api("/api/napcat/quick-connect", "POST");
+    if (!r.ok) throw new Error(r.error || "连接配置失败");
+    let msg = "已写入 " + ((r.configs && r.configs.length) || 1) + " 个 NapCat 账号配置";
+    if (r.token_changed) msg += "；已生成新的 OneBot Token 并重启机器人";
+    if (!r.napcat_running) msg += "；已请求重启 NapCat，请确认 UAC 并按提示登录 QQ";
+    $("#setupNapcatState").textContent = msg;
+    toast(r.token_changed ? "配置已写入，Bot Token 已更新" : "配置已写入");
+    setTimeout(poll, 1200);
+  } catch (e) {
+    const raw = String(e.message || "");
+    const tip = /404|not found|未找到/i.test(raw)
+      ? "当前启动器还是旧版本，请用「停止QAI.bat」完全停止后，从新版本文件夹重新打开 QAI.exe"
+      : raw;
+    $("#setupNapcatState").textContent = "一键连接失败：" + tip;
+    toast(tip, "error");
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -593,7 +630,12 @@ function renderTutorialMarkdown(md) {
   return out.join("");
 }
 
-async function openTutorial() {
+let tutorialFromGuide = false;
+
+async function openTutorial(fromGuide = false) {
+  tutorialFromGuide = !!fromGuide;
+  const footer = $("#tutorialFooter");
+  if (footer) footer.classList.toggle("hidden", tutorialFromGuide);
   const modal = $("#tutorialModal");
   if (!modal) return;
   modal.classList.remove("hidden");
@@ -602,6 +644,7 @@ async function openTutorial() {
   try {
     const r = await api("/api/tutorial");
     body.innerHTML = renderTutorialMarkdown(r.text || "");
+    body.scrollTop = 0;
   } catch (e) {
     body.innerHTML = `<div class="empty-state">教程读取失败：${esc(e.message)}<br>可直接查看项目根目录的「新手教程.md」。</div>`;
   }
@@ -609,11 +652,149 @@ async function openTutorial() {
 
 async function closeTutorial() {
   $("#tutorialModal")?.classList.add("hidden");
+  if (tutorialFromGuide) {
+    tutorialFromGuide = false;
+    return;
+  }
   try { localStorage.setItem("qai-tutorial-done", "1"); } catch (e) {}
   await checkSetup();
 }
 
+function initGuide() {
+  const orb = $("#guideOrb");
+  const menu = $("#guideMenu");
+  const menuBackdrop = $("#guideMenuBackdrop");
+  if (!orb || !menu) return;
+
+  const POS_KEY = "qai-guide-pos";
+  let drag = null;
+  let lastDragAt = 0;
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const size = () => orb.offsetWidth || 62;
+
+  function firstRun() {
+    try { return localStorage.getItem("qai-tutorial-done") !== "1"; } catch (e) { return true; }
+  }
+  function readPos() {
+    try { return JSON.parse(localStorage.getItem(POS_KEY) || "null"); } catch (e) { return null; }
+  }
+  function savePos() {
+    try {
+      localStorage.setItem(POS_KEY, JSON.stringify({
+        left: parseFloat(orb.style.left) || orb.getBoundingClientRect().left,
+        top: parseFloat(orb.style.top) || orb.getBoundingClientRect().top,
+      }));
+    } catch (e) {}
+  }
+  function place(pos) {
+    if (!pos || !Number.isFinite(Number(pos.left)) || !Number.isFinite(Number(pos.top))) return;
+    const s = size();
+    orb.style.left = `${clamp(Number(pos.left), 8, window.innerWidth - s - 8)}px`;
+    orb.style.top = `${clamp(Number(pos.top), 8, window.innerHeight - s - 8)}px`;
+    orb.style.right = "auto";
+    orb.style.bottom = "auto";
+  }
+  function showGuide() {
+    orb.classList.remove("hidden", "fading");
+    place(readPos());
+  }
+  function hideGuideMenu() {
+    menu.classList.add("hidden");
+    menu.classList.remove("below");
+    menuBackdrop?.classList.add("hidden");
+  }
+  function openGuideMenu() {
+    menu.classList.remove("hidden");
+    menuBackdrop?.classList.remove("hidden");
+    const r = orb.getBoundingClientRect();
+    const m = menu.getBoundingClientRect();
+    const below = r.top - m.height - 12 < 8;
+    menu.classList.toggle("below", below);
+    menu.style.left = `${clamp(r.left + r.width / 2 - m.width / 2, 8, window.innerWidth - m.width - 8)}px`;
+    menu.style.top = `${below ? r.bottom + 12 : r.top - m.height - 12}px`;
+  }
+  function closeGuideForever() {
+    hideGuideMenu();
+    orb.classList.add("fading");
+    setTimeout(() => {
+      orb.classList.add("hidden");
+      orb.classList.remove("fading");
+    }, 320);
+    toast("新手向导已关闭，可在「主题与布局 → 唤醒向导」重新开启");
+  }
+
+  if (firstRun()) requestAnimationFrame(showGuide);
+
+  $("#wakeGuide")?.addEventListener("click", () => {
+    showGuide();
+    $("#appearanceModal")?.classList.add("hidden");
+    toast("新手向导已唤醒");
+  });
+
+  orb.addEventListener("click", (e) => {
+    if (e.button !== 0) return;
+    if (Date.now() - lastDragAt < 280) return;
+    if (!$("#tutorialModal").classList.contains("hidden")) {
+      closeTutorial();
+      return;
+    }
+    hideGuideMenu();
+    openTutorial(true);
+  });
+  orb.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTutorial(true); }
+  });
+  orb.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openGuideMenu();
+  });
+
+  orb.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    const r = orb.getBoundingClientRect();
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, left: r.left, top: r.top, moved: false };
+    orb.setPointerCapture?.(e.pointerId);
+    orb.classList.add("dragging");
+  });
+  orb.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (Math.hypot(dx, dy) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    const s = size();
+    orb.style.left = `${clamp(drag.left + dx, 8, window.innerWidth - s - 8)}px`;
+    orb.style.top = `${clamp(drag.top + dy, 8, window.innerHeight - s - 8)}px`;
+    orb.style.right = "auto";
+    orb.style.bottom = "auto";
+  });
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const moved = drag.moved;
+    drag = null;
+    orb.classList.remove("dragging");
+    if (moved) { lastDragAt = Date.now(); savePos(); }
+  };
+  orb.addEventListener("pointerup", endDrag);
+  orb.addEventListener("pointercancel", endDrag);
+
+  document.addEventListener("pointerdown", (e) => {
+    if (menu.classList.contains("hidden")) return;
+    if (menu.contains(e.target) || orb.contains(e.target)) return;
+    hideGuideMenu();
+  });
+  menuBackdrop?.addEventListener("pointerdown", hideGuideMenu);
+  $("#guideNo")?.addEventListener("click", hideGuideMenu);
+  $("#guideYes")?.addEventListener("click", closeGuideForever);
+  $("#tutorialModal")?.addEventListener("click", (e) => {
+    if (e.target === $("#tutorialModal") && tutorialFromGuide) closeTutorial();
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  initGuide();
   $$(".view-tab").forEach((btn) => btn.addEventListener("click", () => setView(btn.dataset.view)));
   $("#startBtn").addEventListener("click", () => action($("#startBtn"), "/api/start"));
   $("#placeholderStart").addEventListener("click", () => action($("#placeholderStart"), "/api/start"));
@@ -652,6 +833,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("#setupModelCustom").addEventListener("input", () => renderCaps(null));
   $("#setupNapcatInstall").addEventListener("click", startNapcatInstall);
+  $("#setupNapcatPan").addEventListener("click", openNapcatPan);
+  $("#setupNapcatQuick").addEventListener("click", quickConnectOnebot);
   $("#setupModal").addEventListener("click", (e) => {
     if (e.target === $("#setupModal")) closeSetup();
   });

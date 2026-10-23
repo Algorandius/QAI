@@ -9,12 +9,12 @@
 NapCat + NoneBot2 + OneBot v11  
 不用装 Python，不用改配置文件，不用开命令行
 
-[**下载 QAI 1.0.2**](https://github.com/Algorandius/QAI/releases/latest) ·
+[**下载 QAI 1.1.0**](https://github.com/Algorandius/QAI/releases/latest) ·
 [使用教程](新手教程.md) ·
 [问题反馈](https://github.com/Algorandius/QAI/issues)
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)
-![Version](https://img.shields.io/badge/version-1.0.2-6C5CE7)
+![Version](https://img.shields.io/badge/version-1.1.0-6C5CE7)
 ![License](https://img.shields.io/badge/license-MIT-2ECC71)
 
 </div>
@@ -32,6 +32,15 @@ QAI 把 QQ 机器人需要的东西放进了一个桌面应用里：
 - 聊天记录、运行状态和日志
 
 打开一个窗口，就能完成从安装到聊天的全过程。
+
+## 1.1.0 新功能
+
+- **每个角色可以单独选模型**：不同人设可以绑定不同厂商、不同模型，也可以继续跟随默认模型。
+- **NapCat 一键连接**：自动查找 NapCat 配置，写入反向 WebSocket 地址和 Token，并重启生效。
+- **夸克网盘下载**：GitHub 打不开时，可以直接从网盘获取 NapCat 安装包。
+- **关窗即退出**：点 QAI 窗口右上角 X，会停止机器人、停止控制台并退出启动器，不再残留后台进程。
+- **悬浮新手向导**：彩色半透明圆球，可拖动、点击看教程、右键关闭；在「主题与布局 → 唤醒向导」开启。
+- **教程重排**：新手教程改为短句、列表和步骤，减少代码块，阅读更轻松。
 
 ---
 
@@ -58,12 +67,20 @@ QAI 把 QQ 机器人需要的东西放进了一个桌面应用里：
 
 ### 3. 登录 QQ 并启动
 
-1. 点 **安装 NapCat**，或选择已有的 NapCat 目录
-2. 点 **启动 NapCat**
-3. 在弹出的 QQ 登录界面扫码
-4. 回到 QAI，点 **启动**
+1. 点 **安装到 QAI 目录**；GitHub 下载失败时，点 **夸克网盘** 下载后解压，再选择含 `launcher-win10.bat` 的目录
+2. 点 **启动 NapCat**，确认 UAC，扫码登录 QQ
+3. 登录成功后，打开 **模型配置 → NapCat**，点 **一键连接**
+4. 按 UAC 提示操作；如果 NapCat 要求重新登录，再扫码一次
+5. 回到 QAI，点 **启动**
 
-看到「机器人 运行中」和「控制台 已就绪」，就可以在群里 @ 它，或者私聊聊天了。
+看到下面四项都正常，就可以在群里 @ 它，或者私聊聊天：
+
+- 机器人：运行中
+- 控制台：已就绪
+- NapCat：已启动
+- 连接：已连接
+
+第一次启动会自动展示新手教程，底部有「开始使用」。从第二次启动开始，悬浮向导默认关闭，需要在「主题与布局 → 唤醒向导」里打开。
 
 ---
 
@@ -83,6 +100,23 @@ QAI 把 QQ 机器人需要的东西放进了一个桌面应用里：
 
 ---
 
+## 新手向导
+
+第一次打开 QAI 会自动弹出新手教程，底部正中间是「开始使用」按钮。
+
+从第二次启动开始，悬浮球默认隐藏。需要时点右上角彩虹圆环（主题与布局），再点「唤醒向导」。
+
+悬浮球是一个动态彩色半透明圆形，始终置顶：
+
+- 按住拖动，位置会自动记住
+- 点击打开新手教程
+- 右键弹出「要关闭新手向导吗？」
+- 点「否」或点其他地方，只关闭消息框，保留圆球
+- 点「是」，圆球渐变消失
+- 由悬浮球打开的教程没有开始按钮，点击教程外面即可关闭
+
+---
+
 ## 模型
 
 | 模型 | 厂商 | 能力 |
@@ -98,6 +132,8 @@ QAI 把 QQ 机器人需要的东西放进了一个桌面应用里：
 | Hy4 preview | 混元 | 文本、识图、工具、推理 |
 
 模型能力会显示在配置界面，识图模型才会出现图像相关参数。
+
+每个角色都可以在人设编辑里单独选择厂商和模型；留空则跟随「模型配置」里的默认模型。
 
 识图模型可开启「识图联网核对」：图片涉及人物、地点、事件、商品等信息时，先联网查证，再结合图片识别结果回复。
 
@@ -146,6 +182,21 @@ QAI 本身不上传这些数据。聊天内容会发送给你选择的模型厂�
 
 ---
 
+## 关闭 QAI
+
+点窗口右上角 X 会：
+
+1. 停止机器人
+2. 停止控制台
+3. 退出启动器
+4. 释放 8080 / 8081 / 8082
+
+NapCat 是独立进程，不会随 QAI 一起退出。如果希望 QQ 也下线，先在顶部点「停止 NapCat」，再关闭窗口。
+
+窗口卡死时才需要双击 `停止QAI.bat`；正常关闭不用它。
+
+---
+
 ## 常见问题
 
 <details>
@@ -164,9 +215,10 @@ QAI 本身不上传这些数据。聊天内容会发送给你选择的模型厂�
 
 处理方式：
 
-1. 挂代理/VPN 后重新点「安装到 QAI 目录」
-2. 或打开 [NapCat 官方下载页](https://github.com/NapNeko/NapCatQQ/releases)，手动下载 Windows Node 包
-3. 解压后，把包含 `launcher-win10.bat` 的目录填到「NapCat 目录」
+1. 打开 [夸克网盘 NapCat](https://pan.quark.cn/s/3dc6f10f0ebd)，下载后解压
+2. 或挂代理/VPN 后重新点「安装到 QAI 目录」
+3. 也可以打开 [NapCat 官方下载页](https://github.com/NapNeko/NapCatQQ/releases)，手动下载 Windows Node 包
+4. 解压后，把包含 `launcher-win10.bat` 的目录填到「NapCat 目录」
 
 </details>
 
@@ -188,7 +240,9 @@ QAI 本身不上传这些数据。聊天内容会发送给你选择的模型厂�
 2. QAI 的「机器人」和「控制台」是否都在运行
 3. `.env` 里的 `ONEBOT_ACCESS_TOKEN` 是否和 NapCat 反向 WebSocket 的 Token 一致
 
-QAI 启动器会读取 NapCat 的 `config/webui.json`，一般不需要手动填 Token。
+也可以在「模型配置 → NapCat」里点 **一键连接**：它会自动写入反向 WebSocket 地址和 Token，然后重启 NapCat。
+
+QAI 启动器会读取 NapCat 的 `config/webui.json`，一般不需要手动填 WebUI Token。
 
 </details>
 

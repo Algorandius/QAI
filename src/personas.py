@@ -23,7 +23,8 @@ from typing import Any
 
 from nonebot import logger
 
-from src.config import ROOT
+from src.config import ROOT, env
+from src.model_catalog import PROVIDER_KEY_ENV, base_for
 
 PERSONA_DIR = ROOT / "personas"
 STATE_FILE = ROOT / "data" / "current_persona.json"
@@ -264,6 +265,57 @@ def _norm(cfg: dict) -> dict:
         except (TypeError, ValueError):
             continue
     return out
+
+
+def model_for(key: Any = None) -> dict[str, str]:
+    """这个场景实际使用的模型；人设没选时继承 .env 默认模型。"""
+    pid = resolve(key)
+    cfg = read_meta(pid).get("config") or {}
+    provider = str(cfg.get("LLM_PROVIDER") or "").strip()
+    model = str(cfg.get("LLM_MODEL") or "").strip()
+    base = str(cfg.get("LLM_BASE_URL") or "").strip().rstrip("/")
+    source = "persona" if (provider or model) else "global"
+
+    global_provider = str(env("LLM_PROVIDER", "") or "").strip()
+    global_model = str(env("LLM_MODEL", "") or "").strip()
+    global_base = str(env("LLM_BASE_URL", "") or "").strip().rstrip("/")
+    if not provider:
+        provider = global_provider
+    if not model:
+        model = global_model
+    if not base:
+        base = base_for(provider, model) or global_base
+    if not provider:
+        probe = (base + " " + model).lower()
+        if "deepseek" in probe:
+            provider = "deepseek"
+        elif "bigmodel" in probe:
+            provider = "zhipu"
+        elif "dashscope" in probe:
+            provider = "qwen"
+        elif "moonshot" in probe:
+            provider = "kimi"
+        elif "tencent" in probe:
+            provider = "hunyuan"
+
+    api_key = str(env(PROVIDER_KEY_ENV.get(provider, ""), "") or "").strip()
+    same_global = (
+        provider == global_provider
+        or (not global_provider and (provider in (global_base + " " + global_model).lower() or base == global_base))
+    )
+    if not api_key and same_global:
+        api_key = str(env("LLM_API_KEY", "") or "").strip()
+    if not api_key and provider == "hunyuan":
+        api_key = str(env("LLM_KEY_TENCENT", "") or env("LLM_KEY_TENCENT_INTL", "") or "").strip()
+
+    return {
+        "provider": provider,
+        "model": model,
+        "base_url": base,
+        "api_key": api_key,
+        "source": source,
+        "persona": pid,
+    }
 
 
 def params_for(key: Any = None, module=None) -> dict:

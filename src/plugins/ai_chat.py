@@ -474,39 +474,54 @@ async def call_llm_raw(
     tools: list[dict] | None = None,
     temperature: float | None = None,
     no_thinking: bool = False,
+    llm: dict | None = None,
 ) -> dict:
     """调用 chat/completions，返回原始 message（可能带 tool_calls）。"""
-    if not LLM_API_KEY:
-        raise RuntimeError("未配置 LLM_API_KEY")
+    conf = llm or {}
+    api_key = str(conf.get("api_key") or LLM_API_KEY).strip()
+    base_url = str(conf.get("base_url") or LLM_BASE_URL).rstrip("/")
+    model = str(conf.get("model") or LLM_MODEL).strip()
+    provider = str(conf.get("provider") or LLM_PROVIDER).strip()
+    if not api_key:
+        raise RuntimeError(f"当前角色未配置 {provider or '模型'} 的 API Key")
+    is_deepseek = (
+        provider == "deepseek"
+        or "deepseek" in base_url.lower()
+        or model.lower().startswith("deepseek")
+    )
+    is_openai_reasoning = (
+        provider == "openai"
+        and re.match(r"^(o[134]|gpt-5)", model.lower()) is not None
+    )
     headers = {
-        "Authorization": f"Bearer {LLM_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    if LLM_PROVIDER == "openrouter":
+    if provider == "openrouter":
         headers["HTTP-Referer"] = "http://127.0.0.1:8081"
         headers["X-Title"] = "QAI"
     payload: dict = {
-        "model": LLM_MODEL,
+        "model": model,
         "messages": messages,
         "stream": False,
     }
-    if not _IS_OPENAI_REASONING:
+    if not is_openai_reasoning:
         payload["temperature"] = LLM_TEMPERATURE if temperature is None else temperature
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
-    if _IS_DEEPSEEK and (tools or no_thinking):
+    if is_deepseek and (tools or no_thinking):
         # DeepSeek 专有字段；其他厂商不认识，发了会 400。
         payload["thinking"] = {"type": "disabled"}
     async with httpx.AsyncClient(timeout=LLM_TIMEOUT) as client:
-        resp = await client.post(f"{LLM_BASE_URL}/chat/completions", json=payload, headers=headers)
+        resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
     return data["choices"][0]["message"]
 
 
-async def call_llm(messages: list[dict], temperature: float | None = None) -> str:
-    msg = await call_llm_raw(messages, temperature=temperature)
+async def call_llm(messages: list[dict], temperature: float | None = None, llm: dict | None = None) -> str:
+    msg = await call_llm_raw(messages, temperature=temperature, llm=llm)
     return (msg.get("content") or "").strip()
 
 
@@ -820,6 +835,7 @@ async def chat_with_image_tool(
     event: MessageEvent | None = None,
     scene_key: str = "",
     sticker_sublib: str = "",
+    llm: dict | None = None,
 ) -> str:
     """带工具的多轮对话（搜图 / 发收藏表情 / 联网搜资料 / 戳一下对方 / 长期记忆）。
 
@@ -834,7 +850,7 @@ async def chat_with_image_tool(
         tools = build_tools()
     web_used = 0
     for _ in range(4):                      # 最多四轮工具往返（搜索要多走几步，但要防死循环）
-        msg = await call_llm_raw(msgs, tools=tools, temperature=temperature)
+        msg = await call_llm_raw(msgs, tools=tools, temperature=temperature, llm=llm)
         calls = msg.get("tool_calls") or []
         if not calls:
             return (msg.get("content") or "").strip()
@@ -902,7 +918,11 @@ async def chat_with_image_tool(
                     result = "这轮已经查够了，直接用已有信息回答"
                 else:
                     web_used += 1
-                    results = await web_tools.search(q, count=5)
+                    results = await web_tools.search(
+                        q, count=5,
+                        api_key=(llm or {}).get("api_key"),
+                        base_url=(llm or {}).get("base_url"),
+                    )
                     result = web_tools.format_results(results)
                     logger.info(f"[web] search {q!r} -> {len(results)} 条结果")
             elif name == WEB_FETCH_TOOL:
@@ -917,7 +937,11 @@ async def chat_with_image_tool(
                     result = "网址不对，要完整的 http 链接"
                 else:
                     web_used += 1
-                    page = await web_tools.fetch(url)
+                    page = await web_tools.fetch(
+                        url,
+                        api_key=(llm or {}).get("api_key"),
+                        base_url=(llm or {}).get("base_url"),
+                    )
                     result = web_tools.format_page(page) if page else "这个网页打不开"
                     logger.info(f"[web] fetch {url[:60]} -> {'ok' if page else 'fail'}")
             elif name == POKE_TOOL:
@@ -988,7 +1012,7 @@ async def chat_with_image_tool(
                 "content": result,
             })
     # 兜底：模型还在反复调工具，直接要一段纯文本
-    msg = await call_llm_raw(msgs)
+    msg = await call_llm_raw(msgs, llm=llm)
     return (msg.get("content") or "").strip()
 
 
@@ -1213,6 +1237,7 @@ async def _(bot: Bot, event: MessageEvent):
     elif isinstance(event, PrivateMessageEvent):
         _sk = ("private", event.user_id)
     _P = personas.params_for(_sk)
+    LLM_CONF = personas.model_for(_sk)
     # 长期记忆按场景隔离："group:群号" / "private:QQ号"
     _LT_KEY = personas.scene_key(_sk) if _sk else ""
     STICKER_SUBLIB = str(_P.get("AI_STICKER_SUBLIB") or "")
@@ -1327,8 +1352,13 @@ async def _(bot: Bot, event: MessageEvent):
         await bot.send(event, "……这个我不懂。")
         return
 
-    if not LLM_API_KEY:
-        await bot.send(event, "AI 功能还没配置：请在 .env 里填写 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL 后重启。")
+    if not LLM_CONF.get("api_key"):
+        _who = personas.display_name(LLM_CONF.get("persona") or "")
+        await bot.send(
+            event,
+            f"「{_who}」使用的模型 {LLM_CONF.get('model') or '—'} 还没配置 API Key，"
+            "请在模型配置里补上对应厂商的 Key。",
+        )
         return
 
     ctx = GROUP_CTX[scene_id] if is_group else PRIVATE_CTX[scene_id]
@@ -1372,7 +1402,7 @@ async def _(bot: Bot, event: MessageEvent):
         "· 不要输出 [表情包：...]、[图片：...]、[语音]、[视频]、[文件] 这类你发不出来的标记。"
     )
     # 联网能力：只在真的给了工具时才说"你能查"，否则模型会想调却调不到
-    web_ready = web_tools.enabled() and not auto_trigger
+    web_ready = web_tools.enabled(LLM_CONF.get("api_key"), LLM_CONF.get("base_url")) and not auto_trigger
     if web_ready:
         rich_hint += (
             "\n· 你**可以联网查**：被问到新闻、天气、价格、比分、某个东西现在怎么样了，"
@@ -1530,10 +1560,10 @@ async def _(bot: Bot, event: MessageEvent):
             answer = await chat_with_image_tool(
                 messages, pending_images, bot=bot, tools=tools,
                 temperature=LLM_TEMP, event=event, scene_key=_LT_KEY,
-                sticker_sublib=STICKER_SUBLIB,
+                sticker_sublib=STICKER_SUBLIB, llm=LLM_CONF,
             )
         else:
-            answer = await call_llm(messages, temperature=LLM_TEMP)
+            answer = await call_llm(messages, temperature=LLM_TEMP, llm=LLM_CONF)
     except Exception as e:
         STATS["ai_fail"] += 1
         logger.warning(f"大模型调用失败: {e}")

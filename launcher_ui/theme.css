@@ -779,6 +779,7 @@ html.no-bg-follow .ambient::after { animation-play-state: paused; }
   border-radius: 10px; padding: 10px 12px;
 }
 .install-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.install-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .install-head b { font-size: 12.5px; }
 .install-head .muted { display: block; font-size: 10.5px; margin-top: 2px; }
 .install-progress {

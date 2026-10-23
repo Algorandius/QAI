@@ -22,8 +22,8 @@ from urllib.parse import parse_qs, urlparse
 
 from nonebot import logger
 
-from src import longterm, memory, personas, sticker_lib
-from src.config import ROOT, env_bool, env_int
+from src import longterm, memory, model_catalog, personas, sticker_lib
+from src.config import ROOT, env, env_bool, env_int
 from src.stats import STATS, uptime_str
 
 ENABLED = env_bool("WEB_PANEL", True)
@@ -293,6 +293,38 @@ def _persona_payload(pid: str) -> dict:
         "config": meta.get("config") or {},
         "text": personas.text_of(pid),
         "avatar": personas.avatar_url(pid),
+    }
+
+
+def _models_payload() -> dict:
+    current_provider = env("LLM_PROVIDER", "")
+    current_model = env("LLM_MODEL", "")
+    if not current_provider:
+        current_base = env("LLM_BASE_URL", "").lower()
+        for p in model_catalog.PROVIDERS:
+            host = p["base"].split("//", 1)[-1].split("/", 1)[0].lower()
+            if any(m["id"] == current_model for m in p["models"]) or (host and host in current_base):
+                current_provider = p["id"]
+                break
+    providers = []
+    for p in model_catalog.PROVIDERS:
+        key_env = model_catalog.PROVIDER_KEY_ENV.get(p["id"], "")
+        key_set = bool(env(key_env, ""))
+        if p["id"] == "hunyuan" and not key_set:
+            key_set = bool(env("LLM_KEY_TENCENT", "") or env("LLM_KEY_TENCENT_INTL", ""))
+        if not key_set and p["id"] == current_provider:
+            key_set = bool(env("LLM_API_KEY", ""))
+        providers.append({
+            "id": p["id"],
+            "name": p["name"],
+            "base": p["base"],
+            "key_set": key_set,
+            "models": p["models"],
+        })
+    return {
+        "ok": True,
+        "current": {"provider": current_provider, "model": current_model},
+        "providers": providers,
     }
 
 
@@ -599,6 +631,9 @@ class _Handler(BaseHTTPRequestHandler):
             if path == "/api/status":
                 self._send_json(200, _status_payload())
                 return
+            if path == "/api/models":
+                self._send_json(200, _models_payload())
+                return
             if path == "/api/personas":
                 self._send_json(200, {
                     "ok": True,
@@ -646,6 +681,14 @@ class _Handler(BaseHTTPRequestHandler):
                     "web_panel_port": PORT,
                     "restart_required": False,
                 })
+                return
+            if path == "/api/tutorial":
+                guide = ROOT / "新手教程.md"
+                try:
+                    text = guide.read_text(encoding="utf-8")
+                except Exception:
+                    text = "# 新手教程\n\n教程文件缺失，请查看项目根目录的「新手教程.md」。"
+                self._send_json(200, {"ok": True, "text": text})
                 return
             if path == "/api/stickers":
                 items = sticker_lib.load_index()
