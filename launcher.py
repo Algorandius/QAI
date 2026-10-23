@@ -614,18 +614,33 @@ def napcat_install_status() -> dict:
 
 
 def _download(url: str, dest: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": "QAI/1.0"})
-    with urllib.request.urlopen(req, timeout=45) as r, open(dest, "wb") as f:
-        total = int(r.headers.get("Content-Length") or 0)
-        got = 0
-        while True:
-            chunk = r.read(1024 * 256)
-            if not chunk:
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "QAI/1.0"})
+            with urllib.request.urlopen(req, timeout=45) as r, open(dest, "wb") as f:
+                total = int(r.headers.get("Content-Length") or 0)
+                got = 0
+                while True:
+                    chunk = r.read(1024 * 256)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    got += len(chunk)
+                    if total:
+                        _napcat_install_set("downloading", f"正在下载 NapCat… {got // 1048576} / {total // 1048576} MB", 10 + int(got * 70 / total))
+            return
+        except Exception as e:
+            last_error = e
+            try:
+                dest.unlink(missing_ok=True)
+            except Exception:
+                pass
+            if attempt >= 3:
                 break
-            f.write(chunk)
-            got += len(chunk)
-            if total:
-                _napcat_install_set("downloading", f"正在下载 NapCat… {got // 1048576} / {total // 1048576} MB", 10 + int(got * 70 / total))
+            _napcat_install_set("downloading", f"下载中断，正在重试（{attempt + 1}/3）…", 8)
+            time.sleep(2)
+    raise last_error or RuntimeError("下载失败")
 
 
 def _safe_extract(zip_path: Path, dest: Path) -> None:
@@ -699,7 +714,12 @@ def _napcat_install_worker() -> None:
         log(f"[launcher] NapCat 安装完成：{target}")
     except Exception as e:
         log(f"[launcher] NapCat 安装失败：{e}")
-        _napcat_install_set("error", f"安装失败：{e}", 0)
+        raw = str(e)
+        if any(k in raw for k in ("10054", "10060", "timed out", "Connection reset", "getaddrinfo", "SSL", "urlopen")):
+            msg = "GitHub 下载连接被中断。请挂代理后重试，或手动下载 NapCat 并选择解压目录。"
+        else:
+            msg = f"安装失败：{raw}"
+        _napcat_install_set("error", msg, 0)
     finally:
         for p in (ROOT / ".napcat-download.zip", ROOT / ".napcat-extract"):
             try:
