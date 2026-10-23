@@ -9,12 +9,12 @@
 NapCat + NoneBot2 + OneBot v11  
 不用装 Python，不用改配置文件，不用开命令行
 
-[**下载 QAI 1.0.1**](https://github.com/Algorandius/QAI/releases/latest) ·
+[**下载 QAI 1.0.2**](https://github.com/Algorandius/QAI/releases/latest) ·
 [使用教程](新手教程.md) ·
 [问题反馈](https://github.com/Algorandius/QAI/issues)
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)
-![Version](https://img.shields.io/badge/version-1.0.1-6C5CE7)
+![Version](https://img.shields.io/badge/version-1.0.2-6C5CE7)
 ![License](https://img.shields.io/badge/license-MIT-2ECC71)
 
 </div>
@@ -154,6 +154,19 @@ QAI 本身不上传这些数据。聊天内容会发送给你选择的模型厂�
 当前 exe 没有代码签名。点“更多信息 → 仍要运行”。
 
 如果公司电脑有安全策略，需要把 QAI 目录加入白名单。
+
+</details>
+
+<details>
+<summary><b>NapCat 一键安装失败</b></summary>
+
+常见报错是 `WinError 10054` 或连接超时，说明当前网络到 GitHub 的下载连接被重置。
+
+处理方式：
+
+1. 挂代理/VPN 后重新点「安装到 QAI 目录」
+2. 或打开 [NapCat 官方下载页](https://github.com/NapNeko/NapCatQQ/releases)，手动下载 Windows Node 包
+3. 解压后，把包含 `launcher-win10.bat` 的目录填到「NapCat 目录」
 
 </details>
 
