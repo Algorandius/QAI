@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0d13">
+  <title>QAI</title>
+  <meta name="theme-color" content="#06131d">
+  <script>
+    try {
+      var savedTheme = localStorage.getItem("qai-theme");
+      document.documentElement.dataset.theme = savedTheme || "blue";
+    } catch (e) {
+      document.documentElement.dataset.theme = "blue";
+    }
+  </script>
+  <link rel="icon" href="/qai-icon-64.png" type="image/png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/theme.css">
+</head>
+<body class="qai-panel">
+<div class="ambient" aria-hidden="true"></div>
+<div class="app">
+  <aside class="sidebar">
+    <nav class="nav" id="nav">
+      <a class="nav-item active" data-tab="dashboard" href="#dashboard">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg>
+        <span>概览</span>
+      </a>
+      <a class="nav-item" data-tab="groups" href="#groups">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3Zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13Zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5Z"/></svg>
+        <span>群与人设</span>
+      </a>
+      <a class="nav-item" data-tab="personas" href="#personas">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5Zm0 2c-3.33 0-10 1.67-10 5v2h20v-2c0-3.33-6.67-5-10-5Z"/></svg>
+        <span>人设库</span>
+      </a>
+      <a class="nav-item" data-tab="chatlog" href="#chatlog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Zm-2 12H6v-2h12v2Zm0-3H6V9h12v2Zm0-3H6V6h12v2Z"/></svg>
+        <span>聊天记录</span>
+      </a>
+      <a class="nav-item" data-tab="affinity" href="#affinity">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 21.35-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z"/></svg>
+        <span>好感度</span>
+      </a>
+      <a class="nav-item" data-tab="stickers" href="#stickers">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM8.5 7A1.5 1.5 0 1 1 7 8.5 1.5 1.5 0 0 1 8.5 7Zm7 10H8v-2h7.5v2Zm1.5-5.5a1.5 1.5 0 1 1 1.5-1.5 1.5 1.5 0 0 1-1.5 1.5Z"/></svg>
+        <span>表情库</span>
+      </a>
+      <a class="nav-item" data-tab="settings" href="#settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.1 7.1 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.72 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.05.24.25.42.5.42h3.84c.25 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Z"/></svg>
+        <span>设置</span>
+      </a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="status-pill" id="connBadge"><span class="dot"></span><span>本机 · 127.0.0.1</span></div>
+      <div class="muted tiny">面板只监听本机，不对外网开放</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1 id="pageTitle">概览</h1>
+        <p class="muted" id="pageSub">机器人运行状态、人设和最近对话</p>
+      </div>
+      <div class="topbar-actions">
+        <span class="persona-pill" id="topPersona">—</span>
+        <button class="btn btn-ghost" id="refreshBtn" type="button">刷新</button>
+      </div>
+    </header>
+
+    <!-- 概览 -->
+    <section class="tab-panel active" id="tab-dashboard">
+      <div class="stats-grid" id="statGrid"></div>
+      <div class="grid-2 dashboard-top">
+        <section class="card persona-hero-card">
+          <div class="card-head">
+            <div><h2>人设展示</h2><p class="muted">当前默认人设与常用参数</p></div>
+            <a class="btn btn-ghost btn-sm" href="#personas">人设库</a>
+          </div>
+          <div id="personaHero"></div>
+        </section>
+        <section class="card recent-card">
+          <div class="card-head">
+            <div><h2>最近对话</h2><p class="muted">机器人最近说了什么</p></div>
+            <a class="btn btn-ghost btn-sm" href="#chatlog">全部记录</a>
+          </div>
+          <div id="recentChats" class="chat-mini"></div>
+        </section>
+      </div>
+      <div class="grid-2 dashboard-pair">
+        <section class="card">
+          <div class="card-head"><h2>快速操作</h2></div>
+          <div class="quick-actions">
+            <button class="quick-action" data-goto="groups"><b>群与人设</b><span>按群挂不同性格</span></button>
+            <button class="quick-action" data-goto="personas"><b>新增人物</b><span>上传或新建人设</span></button>
+            <button class="quick-action" data-goto="chatlog"><b>聊天记录</b><span>筛选机器人发言</span></button>
+            <button class="quick-action" data-goto="affinity"><b>好感度</b><span>看看谁最熟</span></button>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head"><h2>运行信息</h2></div>
+          <div class="kv" id="runInfo"></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- 群与人设 -->
+    <section class="tab-panel" id="tab-groups">
+      <section class="card">
+        <div class="card-head">
+          <div><h2>群 / 私聊人设</h2><p class="muted">每个群可以挂不同人设，参数按该人设独立解析</p></div>
+          <div class="actions"><button class="btn btn-primary btn-sm" id="bindGroupBtn" type="button">+ 绑定群</button></div>
+        </div>
+        <div class="inline-form bind-form hidden" id="bindForm">
+          <input id="bindGroupId" inputmode="numeric" placeholder="群号，如 123456789">
+          <select id="bindPersona"></select>
+          <div class="bind-actions">
+            <button class="btn btn-primary" id="bindSubmit" type="button">绑定</button>
+            <button class="btn btn-ghost" id="bindCancel" type="button">取消</button>
+          </div>
+        </div>
+        <div id="sceneList" class="scene-list"></div>
+      </section>
+
+      <section class="card" id="whitelistCard">
+        <div class="card-head">
+          <div><h2>群白名单</h2><p class="muted">只响应白名单里的群；留空 = 所有群都响应</p></div>
+          <span class="badge warn" id="whitelistState">—</span>
+        </div>
+        <div id="whitelistChips" class="chips"></div>
+        <div class="inline-form">
+          <input id="whitelistInput" placeholder="群号，多个用逗号分隔；留空 = 所有群">
+          <button class="btn btn-primary" id="saveWhitelist" type="button">保存白名单</button>
+        </div>
+        <p class="hint">修改 `.env` 后需要重启机器人才生效。</p>
+      </section>
+    </section>
+
+    <!-- 人设库 -->
+    <section class="tab-panel" id="tab-personas">
+      <section class="card">
+        <div class="card-head">
+          <div><h2>人设库</h2><p class="muted">每个角色独立保存正文与参数</p></div>
+          <button class="btn btn-primary btn-sm" id="createPersonaBtn" type="button">+ 新增人物</button>
+        </div>
+        <div id="personaGrid" class="persona-grid"></div>
+      </section>
+    </section>
+
+    <!-- 聊天记录 -->
+    <section class="tab-panel" id="tab-chatlog">
+      <section class="card">
+        <div class="card-head">
+          <div><h2>聊天记录</h2><p class="muted">筛选并查看机器人说过的话</p></div>
+          <div class="chatlog-head-actions">
+            <button class="btn btn-ghost btn-sm" id="chatlogFolderBtn" type="button">打开记录文件夹</button>
+            <button class="btn btn-primary btn-sm" id="chatRefresh" type="button">查询</button>
+          </div>
+        </div>
+        <div class="toolbar">
+          <select id="chatScene"><option value="">全部场景</option></select>
+          <input id="chatSearch" placeholder="搜索关键词、发言或 QQ 号">
+          <select id="chatLimit">
+            <option value="50">最近 50 条</option>
+            <option value="200" selected>最近 200 条</option>
+            <option value="500">最近 500 条</option>
+            <option value="1000">最近 1000 条</option>
+          </select>
+        </div>
+        <div id="chatList" class="chat-list"></div>
+      </section>
+    </section>
+
+    <!-- 好感度 -->
+    <section class="tab-panel" id="tab-affinity">
+      <section class="card">
+        <div class="card-head">
+          <div><h2>用户好感度</h2><p class="muted">按群成员记录：越聊越熟、被夸会涨、被骂会掉</p></div>
+          <select id="affScene"></select>
+        </div>
+        <div id="affSummary" class="aff-summary"></div>
+        <div id="affList" class="aff-list"></div>
+      </section>
+    </section>
+
+    <!-- 表情库 -->
+    <section class="tab-panel" id="tab-stickers">
+      <section class="card">
+        <div class="card-head">
+          <div><h2>表情库</h2><p class="muted">机器人 QQ 收藏的表情，标签会用来按情绪挑图</p></div>
+          <div class="sticker-head-actions">
+            <button class="btn btn-primary btn-sm" id="stickerImportBtn" type="button">导入表情</button>
+            <button class="btn btn-ghost btn-sm" id="stickerFolderBtn" type="button">打开文件夹</button>
+            <input type="file" id="stickerImportInput" accept="image/gif,image/png,image/jpeg,image/webp" multiple hidden>
+            <span class="muted" id="stickerMeta"></span>
+          </div>
+        </div>
+        <div id="stickerCatalog" class="hint"></div>
+        <div class="sticker-sublib-box">
+          <div id="stickerSublibList" class="sticker-sublib-list"></div>
+          <div class="sticker-sublib-new">
+            <input id="stickerSublibName" maxlength="30" placeholder="新子库名称，例如 绘梨衣专用">
+            <button class="btn btn-ghost btn-sm" id="stickerSublibAdd" type="button">新建子库</button>
+          </div>
+        </div>
+        <div id="stickerFilterBar" class="sticker-filter-bar"></div>
+        <div id="stickerGrid" class="sticker-grid"></div>
+      </section>
+    </section>
+
+    <!-- 设置 -->
+    <section class="tab-panel" id="tab-settings">
+      <div class="grid-2 settings-top">
+        <section class="card">
+          <div class="card-head"><div><h2>管理员 QQ</h2><p class="muted">敏感命令只允许管理员；留空时只允许私聊操作</p></div></div>
+          <div class="inline-form">
+            <input id="adminInput" placeholder="QQ 号，多个用逗号分隔">
+            <button class="btn btn-primary" id="saveAdmin" type="button">保存</button>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head"><div><h2>白名单快捷入口</h2><p class="muted">和「群与人设」页是同一份配置</p></div></div>
+          <p class="muted" id="settingsWhitelist">—</p>
+          <a class="btn btn-ghost" href="#groups">去群管理修改</a>
+        </section>
+      </div>
+      <section class="card env-quick-card">
+        <div class="card-head">
+          <div><h2>常用参数</h2><p class="muted">直接写入本机 .env，保存后大部分下一轮立即生效</p></div>
+          <div class="env-head-actions">
+            <span class="hint" id="envModelHint"></span>
+            <button class="btn btn-primary btn-sm" id="saveEnvParams" type="button">保存参数</button>
+          </div>
+        </div>
+        <div id="envParamGroups" class="env-param-groups"></div>
+        <p class="hint">这里只显示可安全调整的非密钥参数；密钥仍走首次配置/人设接口。</p>
+      </section>
+      <section class="card">
+        <div class="card-head">
+          <div><h2>高级：原始 .env（只读）</h2><p class="muted">密钥已打码；调试用</p></div>
+          <button class="btn btn-ghost btn-sm" id="reloadConfig" type="button">刷新</button>
+        </div>
+        <pre id="configView" class="config-view"></pre>
+      </section>
+    </section>
+
+    <footer class="footer">
+      <span id="footerText">—</span>
+      <span class="muted tiny">local only · no auth · 127.0.0.1</span>
+    </footer>
+  </main>
+</div>
+
+<!-- 人设新增 / 编辑弹窗 -->
+<div class="modal-backdrop hidden" id="personaModal">
+  <div class="modal persona-modal" role="dialog" aria-modal="true" aria-labelledby="personaModalTitle">
+    <div class="modal-head">
+      <div><h2 id="personaModalTitle">新增人物</h2><p class="muted" id="personaModalSub"></p></div>
+      <button class="icon-btn" id="closePersonaModal" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label class="field">
+          <span>ID（英文/数字/下划线）</span>
+          <input id="pId" placeholder="例如 xilian2" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>显示名</span>
+          <input id="pName" placeholder="例如 昔涟" autocomplete="off">
+        </label>
+      </div>
+      <label class="field">
+        <span>一句话简介</span>
+        <input id="pDesc" placeholder="例如 崩坏星穹铁道 · 温柔爱讲故事" autocomplete="off">
+      </label>
+      <div class="avatar-editor">
+        <div class="persona-avatar avatar-preview" id="pAvatarPreview">?</div>
+        <div class="avatar-editor-main">
+          <div class="avatar-editor-title">人设头像 <span class="muted tiny">不导入则取名字前两个字</span></div>
+          <div class="avatar-editor-actions">
+            <label class="btn btn-ghost btn-sm">选择图片<input type="file" id="pAvatar" accept="image/png,image/jpeg,image/webp,image/gif" hidden></label>
+            <button class="btn btn-ghost btn-sm" id="pAvatarClear" type="button">清除</button>
+          </div>
+        </div>
+      </div>
+      <label class="file-drop" id="pFileDrop">
+        <input type="file" id="pFile" accept=".txt,.md,.markdown,.json">
+        <b>上传人物性格文件</b>
+        <span>支持 .txt / .md / .json；JSON 可包含 name、desc、config、text</span>
+        <em id="pFileName">未选择文件</em>
+      </label>
+      <div class="persona-editor-stack">
+        <div class="field">
+          <span>人设正文（persona.txt）</span>
+          <textarea id="pText" rows="11" placeholder="写清她是谁、怎么说话、禁忌、语感示例……"></textarea>
+          <div class="template-actions">
+            <button class="btn btn-ghost btn-sm" id="pTemplateFormat" type="button">填入人设格式模板</button>
+          </div>
+        </div>
+        <div class="field">
+          <span>人设参数</span>
+          <p class="hint">留空表示跟随 `.env`；修改后只影响这个角色。</p>
+          <div id="pConfigFields" class="persona-config-fields"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="pCancel" type="button">取消</button>
+      <button class="btn btn-primary" id="pSave" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="appearanceModal">
+  <div class="modal appearance-modal" role="dialog" aria-modal="true" aria-labelledby="appearanceTitle">
+    <div class="modal-head">
+      <div>
+        <h2 id="appearanceTitle">主题与布局</h2>
+        <p class="muted">背景颜色、动效开关和卡片排序</p>
+      </div>
+      <button class="icon-btn" id="closeAppearance" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="setting-group">
+        <div class="setting-title">主题颜色</div>
+        <div class="theme-grid">
+          <button class="theme-option theme-choice" data-theme="blue" type="button"><i class="theme-swatch"></i><span>幽静蓝</span></button>
+          <button class="theme-option theme-choice" data-theme="purple" type="button"><i class="theme-swatch"></i><span>炫酷紫</span></button>
+          <button class="theme-option theme-choice" data-theme="white" type="button"><i class="theme-swatch"></i><span>清爽白</span></button>
+          <button class="theme-option theme-choice" data-theme="gray" type="button"><i class="theme-swatch"></i><span>沉稳灰</span></button>
+        </div>
+      </div>
+      <div class="setting-group">
+        <div class="setting-title">背景颜色</div>
+        <div class="color-row">
+          <input type="color" id="bgColor" value="#06131d" aria-label="背景颜色">
+          <button class="btn btn-ghost btn-sm" id="bgReset" type="button">跟随主题</button>
+          <span class="hint" id="bgColorValue">使用主题背景</span>
+        </div>
+        <p class="hint">自定义只改页面底色，卡片和文字仍按主题配色；浅色底色可能降低对比度。</p>
+      </div>
+      <div class="setting-group">
+        <div class="setting-title">动效与布局</div>
+        <div class="switch-row">
+          <div><b>卡片点击抖动</b><span>点击卡片时轻轻抖两下</span></div>
+          <label class="switch"><input type="checkbox" id="toggleJiggle" checked><i></i></label>
+        </div>
+        <div class="switch-row">
+          <div><b>背景跟随鼠标</b><span>光晕随鼠标位置移动</span></div>
+          <label class="switch"><input type="checkbox" id="toggleBgFollow" checked><i></i></label>
+        </div>
+        <div class="switch-row">
+          <div><b>界面布局</b><span>拖动排序、拖右下角缩放；布局期间卡片不可点击</span></div>
+          <label class="switch"><input type="checkbox" id="toggleCardDrag"><i></i></label>
+        </div>
+        <p class="hint">开启后，长按卡片可拖动排序；鼠标移到卡片右下角可拖动缩放，松手保存为默认布局；同一网格的其他卡片会自动重排。</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="appearanceDone" type="button">完成</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="qaiConfirmModal" class="modal-backdrop hidden">
+  <div class="modal qai-confirm" role="alertdialog" aria-modal="true" aria-labelledby="qaiConfirmTitle">
+    <div class="modal-head">
+      <div><h2 id="qaiConfirmTitle">请确认</h2></div>
+    </div>
+    <div class="modal-body"><p id="qaiConfirmText" class="confirm-text"></p></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="qaiConfirmCancel" type="button">取消</button>
+      <button class="btn btn-primary" id="qaiConfirmOk" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" aria-live="polite"></div>
+<script src="/theme.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

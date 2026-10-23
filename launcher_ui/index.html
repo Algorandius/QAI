@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0a0c12">
+  <title>QAI</title>
+  <meta name="theme-color" content="#06131d">
+  <script>
+    try {
+      var savedTheme = localStorage.getItem("qai-theme");
+      document.documentElement.dataset.theme = savedTheme || "blue";
+    } catch (e) {
+      document.documentElement.dataset.theme = "blue";
+    }
+  </script>
+  <link rel="icon" href="/qai-icon-64.png" type="image/png">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/theme.css">
+</head>
+<body class="qai-shell">
+<div class="ambient" aria-hidden="true"></div>
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-logo"><img src="/qai-icon.png" alt="QAI"></div>
+    <div class="brand-text">
+      <h1>QAI</h1>
+      <p>CHATBOT</p>
+    </div>
+  </div>
+
+  <div class="view-tabs" id="viewTabs">
+    <button class="view-tab active" data-view="panel" type="button">管理台</button>
+    <button class="view-tab" data-view="napcat" type="button">NapCat</button>
+  </div>
+
+  <div class="statuses" id="statuses">
+    <span class="status-chip" id="chipBot"><i></i><span>机器人</span><b>检测中</b></span>
+    <span class="status-chip" id="chipPanel"><i></i><span>控制台</span><b>检测中</b></span>
+    <span class="status-chip" id="chipNapcat"><i></i><span>NapCat</span><b>检测中</b></span>
+    <span class="status-chip" id="chipWs"><i></i><span>连接</span><b>检测中</b></span>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary" id="startBtn" type="button">启动</button>
+    <button class="btn" id="stopBtn" type="button">停止</button>
+    <button class="btn" id="restartBtn" type="button">重启</button>
+    <button class="btn btn-ghost" id="napcatBtn" type="button">启动 NapCat</button>
+    <button class="btn btn-ghost" id="tokenBtn" type="button">Token</button>
+    <button class="btn btn-ghost" id="logBtn" type="button">日志</button>
+    <button class="icon-btn" id="appearanceBtn" type="button" title="主题与布局" aria-label="主题与布局">
+      <svg class="rainbow-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <defs>
+          <linearGradient id="qaiRainbow" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#ff5f6d"><animate attributeName="stop-color" values="#ff5f6d;#4facfe;#47e891;#c471ed;#ff5f6d" dur="8s" repeatCount="indefinite"/></stop>
+            <stop offset="25%" stop-color="#ffc371"><animate attributeName="stop-color" values="#ffc371;#c471ed;#4facfe;#47e891;#ffc371" dur="8s" repeatCount="indefinite"/></stop>
+            <stop offset="50%" stop-color="#47e891"><animate attributeName="stop-color" values="#47e891;#ff5f6d;#ffc371;#4facfe;#47e891" dur="8s" repeatCount="indefinite"/></stop>
+            <stop offset="75%" stop-color="#4facfe"><animate attributeName="stop-color" values="#4facfe;#47e891;#c471ed;#ffc371;#4facfe" dur="8s" repeatCount="indefinite"/></stop>
+            <stop offset="100%" stop-color="#c471ed"><animate attributeName="stop-color" values="#c471ed;#ffc371;#ff5f6d;#47e891;#c471ed" dur="8s" repeatCount="indefinite"/></stop>
+          </linearGradient>
+        </defs>
+        <path fill="url(#qaiRainbow)" d="M12 3a9 9 0 1 0 0 18h1.6a2.4 2.4 0 0 0 0-4.8H12a2.2 2.2 0 0 1 0-4.4h4.2A4.8 4.8 0 0 0 21 7.2 4.8 4.8 0 0 0 16.2 3H12Zm-4.4 5a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8Zm4-2a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8Zm4.2 1a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8Z"/>
+      </svg>
+    </button>
+    <button class="icon-btn" id="setupBtn" type="button" title="模型配置" aria-label="模型配置"><span class="gear-icon">⚙</span></button>
+  </div>
+</header>
+
+<main class="stage">
+  <div class="placeholder" id="placeholder">
+    <div class="cover-card"><img src="/qai-cover.png" alt="QAI CHATBOT"></div>
+    <h2 id="placeholderTitle">正在检测 QAI…</h2>
+    <p id="placeholderText">启动器会自动拉起机器人；启动后这里会嵌入管理控制台。</p>
+    <div class="placeholder-actions">
+      <button class="btn btn-primary" id="placeholderStart" type="button">启动机器人</button>
+      <button class="btn btn-ghost" id="placeholderNapcat" type="button">启动 NapCat</button>
+    </div>
+    <div class="hint" id="placeholderHint">NapCat 需要管理员权限并登录 QQ；连接成功后右上角「连接」会变绿。</div>
+  </div>
+  <iframe id="panelFrame" title="QAI 管理控制台 / NapCat WebUI" src="about:blank"></iframe>
+
+  <section class="log-drawer hidden" id="logDrawer">
+    <div class="log-head">
+      <b>QAI 运行日志</b>
+      <span class="muted" id="logMeta">launcher-bot.log</span>
+      <button class="icon-btn" id="closeLog" type="button" aria-label="关闭">×</button>
+    </div>
+    <pre id="logText">加载中…</pre>
+  </section>
+</main>
+
+<div class="modal-backdrop hidden" id="tokenModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="tokenTitle">
+    <div class="modal-head">
+      <div>
+        <h2 id="tokenTitle">NapCat WebUI Token</h2>
+        <p class="muted">自动从 NapCat 的 config/webui.json 读取，不用再翻启动日志</p>
+      </div>
+      <button class="icon-btn" id="closeToken" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="token-row">
+        <code id="tokenDisplay">加载中…</code>
+        <button class="btn btn-ghost btn-sm" id="toggleToken" type="button">显示</button>
+        <button class="btn btn-primary btn-sm" id="copyToken" type="button">复制</button>
+      </div>
+      <p class="hint" id="tokenMeta">—</p>
+      <div class="modal-actions">
+        <a class="btn btn-primary" id="tokenOpen" target="_blank" rel="noreferrer">打开带 Token 的 WebUI</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="appearanceModal">
+  <div class="modal appearance-modal" role="dialog" aria-modal="true" aria-labelledby="appearanceTitle">
+    <div class="modal-head">
+      <div>
+        <h2 id="appearanceTitle">主题与布局</h2>
+        <p class="muted">背景颜色、动效开关和卡片排序</p>
+      </div>
+      <button class="icon-btn" id="closeAppearance" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="setting-group">
+        <div class="setting-title">主题颜色</div>
+        <div class="theme-grid">
+          <button class="theme-option theme-choice" data-theme="blue" type="button"><i class="theme-swatch"></i><span>幽静蓝</span></button>
+          <button class="theme-option theme-choice" data-theme="purple" type="button"><i class="theme-swatch"></i><span>炫酷紫</span></button>
+          <button class="theme-option theme-choice" data-theme="white" type="button"><i class="theme-swatch"></i><span>清爽白</span></button>
+          <button class="theme-option theme-choice" data-theme="gray" type="button"><i class="theme-swatch"></i><span>沉稳灰</span></button>
+        </div>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-title">背景颜色</div>
+        <div class="color-row">
+          <input type="color" id="bgColor" value="#06131d" aria-label="背景颜色">
+          <button class="btn btn-ghost btn-sm" id="bgReset" type="button">跟随主题</button>
+          <span class="hint" id="bgColorValue">使用主题背景</span>
+        </div>
+        <p class="hint">自定义只改页面底色，卡片和文字仍按主题配色；浅色底色可能降低对比度。</p>
+      </div>
+
+      <div class="setting-group">
+        <div class="setting-title">动效与布局</div>
+        <div class="switch-row">
+          <div><b>卡片点击抖动</b><span>点击卡片时轻轻抖两下</span></div>
+          <label class="switch"><input type="checkbox" id="toggleJiggle" checked><i></i></label>
+        </div>
+        <div class="switch-row">
+          <div><b>背景跟随鼠标</b><span>光晕随鼠标位置移动</span></div>
+          <label class="switch"><input type="checkbox" id="toggleBgFollow" checked><i></i></label>
+        </div>
+        <div class="glow-settings" id="glowSettings">
+          <div class="glow-row">
+            <span>光圈大小</span>
+            <input type="range" id="glowSize" min="60" max="180" step="5" value="100" aria-label="光圈大小">
+            <b id="glowSizeValue">100%</b>
+          </div>
+          <div class="glow-row">
+            <span>光圈颜色</span>
+            <input type="color" id="glowColor" value="#4da3ff" aria-label="光圈颜色">
+            <button class="btn btn-ghost btn-sm" id="glowReset" type="button">跟随主题</button>
+          </div>
+          <div class="glow-row glow-shape-row">
+            <span>光圈形态</span>
+            <div class="glow-shapes">
+              <button class="glow-shape active" data-shape="soft" type="button">柔和圆</button>
+              <button class="glow-shape" data-shape="wide" type="button">横向椭圆</button>
+              <button class="glow-shape" data-shape="leaf" type="button">叶片</button>
+              <button class="glow-shape" data-shape="ring" type="button">光环</button>
+            </div>
+          </div>
+          <p class="hint">大小控制光圈范围；颜色可选任意色；四种形态分别是柔和圆、横向椭圆、叶片和光环。</p>
+        </div>
+        <div class="switch-row">
+          <div><b>界面布局</b><span>拖动排序、拖右下角缩放；布局期间卡片不可点击</span></div>
+          <label class="switch"><input type="checkbox" id="toggleCardDrag"><i></i></label>
+        </div>
+        <p class="hint">开启后，长按卡片可拖动排序；鼠标移到卡片右下角可拖动缩放，松手保存为默认布局；同一网格的其他卡片会自动重排。</p>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="appearanceDone" type="button">完成</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="setupModal">
+  <div class="modal setup-modal" role="dialog" aria-modal="true" aria-labelledby="setupTitle">
+    <div class="modal-head">
+      <div>
+        <h2 id="setupTitle">模型配置</h2>
+        <p class="muted">填一次就能用：API Key、管理员、群白名单、NapCat 目录</p>
+      </div>
+      <button class="icon-btn" id="closeSetup" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="setup-notice">
+        NapCat 需要 QQNT 客户端，<b>QQ 登录必须扫码</b>；QAI 不能代替登录。
+        可以直接一键安装到本应用目录，也可以手动选择已有安装。<br>
+        <a href="https://github.com/NapNeko/NapCatQQ/releases" target="_blank" rel="noreferrer">NapCat 发布页</a>
+        ·
+        <a href="https://im.qq.com/" target="_blank" rel="noreferrer">下载 QQNT</a>
+      </div>
+
+      <div class="install-box">
+        <div class="install-head">
+          <div><b>NapCat</b><span class="muted">默认安装到 QAI\napcat</span></div>
+          <button class="btn btn-primary btn-sm" id="setupNapcatInstall" type="button">安装到 QAI 目录</button>
+        </div>
+        <div class="install-progress"><i id="setupNapcatBar"></i></div>
+        <div class="hint" id="setupNapcatState">从 GitHub 下载最新 Windows Node 包，约 120MB；安装后仍需扫码登录 QQ。</div>
+      </div>
+
+      <div class="privacy-note">
+        🔒 <b>QAI 是本地前端</b>：API Key 只写入本机 `.env`，请求由本机直接发送到模型厂商；
+        QAI 没有中转服务器，不会上传、收集或泄露你的 Key。
+      </div>
+
+      <div class="form-row">
+        <label class="field">
+          <span>模型厂商</span>
+          <select id="setupProvider"></select>
+        </label>
+        <label class="field">
+          <span>模型</span>
+          <select id="setupModel"></select>
+        </label>
+      </div>
+      <label class="field hidden" id="setupModelCustomWrap">
+        <span>自定义模型名</span>
+        <input id="setupModelCustom" placeholder="例如 my-provider/my-model" autocomplete="off">
+      </label>
+      <p class="model-desc" id="setupModelDesc"></p>
+      <div class="cap-row" id="setupCaps"></div>
+      <p class="hint">徽标表示模型 API 的原生能力；即使未标「原生联网」，QAI 仍可使用应用内搜索工具。</p>
+      <p class="hint" id="setupProviderHint">选择厂商后会自动填入兼容地址和模型。</p>
+
+      <label class="field">
+        <span>API Key</span>
+        <input id="setupKey" type="password" placeholder="sk-...（已配置可留空保持不变）" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>Base URL（OpenAI 兼容地址）</span>
+        <input id="setupBase" placeholder="https://api.deepseek.com/v1" autocomplete="off">
+      </label>
+
+      <label class="field">
+        <span>NapCat 目录（包含 launcher-win10.bat）</span>
+        <div class="inline-field">
+          <input id="setupNapdir" placeholder="例如 D:\QAI\napcat" autocomplete="off">
+          <button class="btn btn-ghost btn-sm" id="setupDetect" type="button">自动检测</button>
+        </div>
+      </label>
+      <p class="hint" id="setupDetectResult">点「自动检测」查找已有 NapCat；一键安装会自动填好这里。</p>
+      <div class="form-row">
+        <label class="field">
+          <span>管理员 QQ（可空）</span>
+          <input id="setupAdmin" placeholder="多个用逗号分隔" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>群白名单（可空 = 所有群）</span>
+          <input id="setupGroups" placeholder="多个用逗号分隔" autocomplete="off">
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="tutorialBtn" type="button">新手教程</button>
+        <button class="btn btn-ghost" id="setupLater" type="button">稍后再说</button>
+        <button class="btn btn-primary" id="setupSave" type="button">保存并启动</button>
+      </div>
+      <p class="hint" id="setupSaveHint">保存后会写入 `.env`；如果机器人已在运行，会重启一次让配置生效。</p>
+    </div>
+  </div>
+</div>
+
+<div id="tutorialModal" class="modal-backdrop hidden">
+  <div class="modal tutorial-modal" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
+    <div class="modal-head">
+      <div><h2 id="tutorialTitle">新手教程</h2><p class="muted">第一次使用 QAI，按下面几步就能跑起来</p></div>
+      <button class="icon-btn" id="closeTutorial" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body tutorial-body" id="tutorialBody">
+      <div class="empty-state">正在加载教程…</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="tutorialDone" type="button">开始使用</button>
+    </div>
+  </div>
+</div>
+
+<div id="qaiConfirmModal" class="modal-backdrop hidden">
+  <div class="modal qai-confirm" role="alertdialog" aria-modal="true" aria-labelledby="qaiConfirmTitle">
+    <div class="modal-head"><div><h2 id="qaiConfirmTitle">请确认</h2></div></div>
+    <div class="modal-body"><p id="qaiConfirmText" class="confirm-text"></p></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="qaiConfirmCancel" type="button">取消</button>
+      <button class="btn btn-primary" id="qaiConfirmOk" type="button">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" aria-live="polite"></div>
+<script src="/models.js"></script>
+<script src="/theme.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

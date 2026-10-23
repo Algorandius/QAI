@@ -1,0 +1,17 @@
+{
+  "network": {
+    "websocketClients": [
+      {
+        "name": "NoneBot2",
+        "enable": true,
+        "url": "ws://127.0.0.1:8080/onebot/v11/ws",
+        "messagePostFormat": "array",
+        "reportSelfMessage": false,
+        "reconnectInterval": 5000,
+        "token": "change-me",
+        "debug": false,
+        "heartInterval": 30000
+      }
+    ]
+  }
+}
