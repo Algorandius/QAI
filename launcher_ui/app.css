@@ -196,6 +196,137 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---------- 新手向导悬浮球 ---------- */
+.guide-orb {
+  position: fixed;
+  right: 28px;
+  bottom: 92px;
+  width: 62px;
+  height: 62px;
+  z-index: 2147483000;
+  border-radius: 50%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  opacity: .82;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(from 20deg, #ff7a9f, #ffd36e, #6ff2bd, #6ac8ff, #b58cff, #ff7a9f);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.25) inset, 0 10px 35px rgba(95,120,255,.4);
+  transition: opacity .3s ease, transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease;
+  animation: guide-hue 9s linear infinite, guide-breathe 4.5s ease-in-out infinite;
+}
+.guide-orb::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.85), rgba(255,255,255,.08) 38%, rgba(5,15,30,.22) 76%);
+  border: 1px solid rgba(255,255,255,.4);
+  backdrop-filter: blur(4px);
+}
+.guide-orb::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.3);
+  animation: guide-ring 2.8s ease-out infinite;
+  pointer-events: none;
+}
+.guide-orb:hover {
+  opacity: .98;
+  transform: scale(1.06);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.4) inset, 0 14px 45px rgba(120,150,255,.55);
+}
+.guide-orb.dragging {
+  cursor: grabbing;
+  transform: scale(1.08);
+  animation-play-state: paused;
+}
+.guide-orb.fading {
+  opacity: 0;
+  transform: scale(.25);
+  pointer-events: none;
+}
+.guide-orb.hidden { display: none; }
+.guide-orb-halo {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(120,180,255,.2), transparent 68%);
+  pointer-events: none;
+}
+.guide-orb-mark {
+  position: relative;
+  z-index: 1;
+  color: #fff;
+  font-size: 26px;
+  font-weight: 800;
+  text-shadow: 0 2px 8px rgba(0,0,0,.35);
+}
+@keyframes guide-hue { to { filter: hue-rotate(360deg); } }
+@keyframes guide-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255,255,255,.25) inset, 0 10px 35px rgba(95,120,255,.4); }
+  50% { box-shadow: 0 0 0 1px rgba(255,255,255,.4) inset, 0 12px 42px rgba(180,120,255,.52); }
+}
+@keyframes guide-ring {
+  0% { transform: scale(.86); opacity: .7; }
+  75%, 100% { transform: scale(1.22); opacity: 0; }
+}
+.guide-menu {
+  position: fixed;
+  z-index: 2147483002;
+  width: 218px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 18px 55px rgba(0,0,0,.45);
+  backdrop-filter: blur(14px);
+}
+.guide-menu.hidden { display: none; }
+.guide-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482999;
+  background: transparent;
+}
+.guide-menu-backdrop.hidden { display: none; }
+.tutorial-footer {
+  justify-content: center !important;
+  padding: 12px 18px 16px;
+}
+.tutorial-footer.hidden { display: none !important; }
+.tutorial-modal { height: min(720px, calc(100dvh - 36px)); }
+.tutorial-body { flex: 1 1 auto; max-height: none; overflow: auto; }
+.guide-menu::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.guide-menu.below::after {
+  top: -6px;
+  bottom: auto;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+}
+.guide-menu p { margin: 0 0 10px; font-size: 12.5px; }
+.guide-menu-actions { display: flex; justify-content: flex-end; gap: 7px; }
+
+@media (max-width: 620px) {
+  .guide-orb { right: 18px; bottom: 76px; width: 54px; height: 54px; }
+  .guide-orb-mark { font-size: 23px; }
+}
+
 @media (max-width: 1100px) {
   .topbar { height: auto; min-height: 66px; flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
   .statuses { order: 3; flex: 1 1 100%; }

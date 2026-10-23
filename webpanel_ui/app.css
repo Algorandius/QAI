@@ -570,6 +570,9 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
 .persona-config-field > small { color: var(--muted); font-size: 9.5px; line-height: 1.35; min-height: 22px; }
 .persona-config-field input { padding: 6px 8px; font-size: 11.5px; }
 .persona-config-field select { padding: 6px 8px; font-size: 11.5px; }
+.persona-model-field { grid-column: 1 / -1; }
+.persona-model-field select { width: 100%; }
+.persona-model-field .hint { font-size: 9.5px; line-height: 1.4; }
 .file-drop {
   border: 1px dashed #37415a; border-radius: 12px; padding: 15px;
   display: flex; flex-direction: column; gap: 4px; cursor: pointer;
@@ -610,6 +613,177 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
 * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+
+/* ---------- 新手向导悬浮球 ---------- */
+.guide-orb {
+  position: fixed;
+  right: 28px;
+  bottom: 92px;
+  width: 62px;
+  height: 62px;
+  z-index: 2147483000;
+  border-radius: 50%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  opacity: .82;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(from 20deg, #ff7a9f, #ffd36e, #6ff2bd, #6ac8ff, #b58cff, #ff7a9f);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.25) inset, 0 10px 35px rgba(95,120,255,.4);
+  transition: opacity .3s ease, transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s ease;
+  animation: guide-hue 9s linear infinite, guide-breathe 4.5s ease-in-out infinite;
+}
+.guide-orb::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.85), rgba(255,255,255,.08) 38%, rgba(5,15,30,.22) 76%);
+  border: 1px solid rgba(255,255,255,.4);
+  backdrop-filter: blur(4px);
+}
+.guide-orb::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.3);
+  animation: guide-ring 2.8s ease-out infinite;
+  pointer-events: none;
+}
+.guide-orb:hover {
+  opacity: .98;
+  transform: scale(1.06);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.4) inset, 0 14px 45px rgba(120,150,255,.55);
+}
+.guide-orb.dragging {
+  cursor: grabbing;
+  transform: scale(1.08);
+  animation-play-state: paused;
+}
+.guide-orb.fading {
+  opacity: 0;
+  transform: scale(.25);
+  pointer-events: none;
+}
+.guide-orb.hidden { display: none; }
+.guide-orb-halo {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(120,180,255,.2), transparent 68%);
+  pointer-events: none;
+}
+.guide-orb-mark {
+  position: relative;
+  z-index: 1;
+  color: #fff;
+  font-size: 26px;
+  font-weight: 800;
+  text-shadow: 0 2px 8px rgba(0,0,0,.35);
+}
+@keyframes guide-hue {
+  to { filter: hue-rotate(360deg); }
+}
+@keyframes guide-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255,255,255,.25) inset, 0 10px 35px rgba(95,120,255,.4); }
+  50% { box-shadow: 0 0 0 1px rgba(255,255,255,.4) inset, 0 12px 42px rgba(180,120,255,.52); }
+}
+@keyframes guide-ring {
+  0% { transform: scale(.86); opacity: .7; }
+  75%, 100% { transform: scale(1.22); opacity: 0; }
+}
+
+.guide-menu {
+  position: fixed;
+  z-index: 2147483002;
+  width: 218px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 18px 55px rgba(0,0,0,.45);
+  backdrop-filter: blur(14px);
+}
+.guide-menu.hidden { display: none; }
+.guide-menu::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.guide-menu.below::after {
+  top: -6px;
+  bottom: auto;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+}
+.guide-menu p { margin: 0 0 10px; font-size: 12.5px; }
+.guide-menu-actions { display: flex; justify-content: flex-end; gap: 7px; }
+
+.guide-tutorial-modal {
+  width: min(780px, calc(100vw - 32px));
+  max-height: min(86dvh, 900px);
+}
+.guide-tutorial-body {
+  font-size: 13px;
+  line-height: 1.78;
+  gap: 0;
+  padding: 20px 24px;
+}
+.guide-tutorial-body h1,
+.guide-tutorial-body h2,
+.guide-tutorial-body h3,
+.guide-tutorial-body h4 { line-height: 1.35; scroll-margin-top: 12px; }
+.guide-tutorial-body h1 { font-size: 21px; margin: 0 0 12px; }
+.guide-tutorial-body h2 { font-size: 16px; margin: 24px 0 9px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.guide-tutorial-body h3 { font-size: 14px; margin: 17px 0 7px; color: var(--accent-2); }
+.guide-tutorial-body h4 { font-size: 13px; margin: 13px 0 5px; }
+.guide-tutorial-body p { margin: 7px 0; }
+.guide-tutorial-body ul,
+.guide-tutorial-body ol { margin: 7px 0 12px; padding-left: 22px; }
+.guide-tutorial-body li { margin: 4px 0; }
+.guide-tutorial-body strong { color: var(--text); }
+.guide-tutorial-body code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: .92em;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-2);
+}
+.guide-tutorial-body pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow: auto;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+}
+.guide-tutorial-body pre code { padding: 0; background: transparent; color: var(--text); }
+.guide-tutorial-body blockquote {
+  margin: 10px 0;
+  padding: 7px 12px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 0 7px 7px 0;
+}
+.guide-tutorial-body hr { border: 0; border-top: 1px solid var(--line-soft); margin: 20px 0; }
+.guide-tutorial-body a { color: var(--accent-2); text-decoration: underline; text-underline-offset: 2px; }
+.guide-tutorial-body .empty-state { margin: 20px 0; }
+
+@media (max-width: 620px) {
+  .guide-orb { right: 18px; bottom: 76px; width: 54px; height: 54px; }
+  .guide-orb-mark { font-size: 23px; }
+  .guide-tutorial-body { padding: 15px 16px; }
+}
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 1180px) {

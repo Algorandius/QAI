@@ -22,6 +22,7 @@ const S = {
   recentVisible: 5,
   recentObserver: null,
   recentResizeTimer: 0,
+  models: { providers: [], current: {} },
 };
 
 const TAB_META = {
@@ -1307,14 +1308,84 @@ async function loadStickerSublibs() {
   }
 }
 
+async function loadModels() {
+  try {
+    S.models = await api("/api/models");
+  } catch (e) {
+    S.models = { providers: [], current: {} };
+  }
+}
+
+function modelPair(config) {
+  const provider = String((config && config.LLM_PROVIDER) || "");
+  const model = String((config && config.LLM_MODEL) || "");
+  return provider && model ? `${provider}|${model}` : "";
+}
+
+function modelBase(pair) {
+  if (!pair) return "";
+  const [provider, modelId] = pair.split("|");
+  const p = (S.models.providers || []).find((x) => x.id === provider);
+  const m = p && (p.models || []).find((x) => x.id === modelId);
+  return (m && m.base) || (p && p.base) || "";
+}
+
+function modelLabel(pair) {
+  if (!pair) return "跟随默认";
+  const [provider, modelId] = pair.split("|");
+  const p = (S.models.providers || []).find((x) => x.id === provider);
+  const m = p && (p.models || []).find((x) => x.id === modelId);
+  return m ? `${p.name} · ${m.name}` : pair;
+}
+
+function modelOptionsHtml(config) {
+  const selected = modelPair(config);
+  const cur = S.models.current || {};
+  const curText = cur.model ? `${cur.provider || "默认"} · ${cur.model}` : "模型配置里的默认模型";
+  let html = `<option value="">跟随默认（${esc(curText)}）</option>`;
+  for (const p of (S.models.providers || [])) {
+    const opts = (p.models || []).map((m) => {
+      const pair = `${p.id}|${m.id}`;
+      const suffix = p.key_set ? "" : "（未配置 Key）";
+      return `<option value="${esc(pair)}"${pair === selected ? " selected" : ""}>${esc(m.name)}${suffix}</option>`;
+    }).join("");
+    if (opts) html += `<optgroup label="${esc(p.name)}">${opts}</optgroup>`;
+  }
+  if (selected && !html.includes(`value="${esc(selected)}"`)) {
+    html += `<option value="${esc(selected)}" selected>自定义 · ${esc(selected)}</option>`;
+  }
+  return html;
+}
+
+function updateModelHint() {
+  const hint = $("#pModelHint");
+  if (!hint) return;
+  const pair = $("#pModel")?.value || "";
+  if (!pair) {
+    hint.textContent = "不单独选择时，跟随「模型配置」里的默认模型。";
+    return;
+  }
+  const [provider] = pair.split("|");
+  const p = (S.models.providers || []).find((x) => x.id === provider);
+  hint.textContent = p && !p.key_set
+    ? `「${p.name}」还没有配置 Key；需要先在「模型配置」里填这个厂商的 Key。`
+    : `这个角色将使用 ${modelLabel(pair)}。`;
+}
+
 function renderPersonaConfigFields(config) {
   const box = $("#pConfigFields");
   if (!box) return;
-  const known = new Set([...PERSONA_QUICK_DEFS.map((d) => d.key), "AI_STICKER_SUBLIB"]);
+  const modelKeys = ["LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL"];
+  const known = new Set([...PERSONA_QUICK_DEFS.map((d) => d.key), "AI_STICKER_SUBLIB", ...modelKeys]);
   const extras = {};
   Object.keys(config || {}).forEach((k) => { if (!known.has(k)) extras[k] = config[k]; });
   S.modal.configExtra = extras;
-  box.innerHTML = PERSONA_QUICK_DEFS.map((d) => {
+  box.innerHTML = `<label class="persona-config-field persona-model-field">
+      <span>角色模型</span>
+      <small>留空跟随默认；每个角色可以选不同厂商和模型</small>
+      <select id="pModel">${modelOptionsHtml(config)}</select>
+      <div class="hint" id="pModelHint"></div>
+    </label>` + PERSONA_QUICK_DEFS.map((d) => {
     const raw = config ? config[d.key] : null;
     const val = raw == null || raw === "" ? "" : (d.type === "percent" ? Math.round(Number(raw) * 100) : raw);
     return `<label class="persona-config-field">
@@ -1327,11 +1398,23 @@ function renderPersonaConfigFields(config) {
       <small>留空 = 整个表情库；选择后这个角色只从这个子库挑表情</small>
       <select id="pConfigSublib">${sublibOptionsHtml(String((config && config.AI_STICKER_SUBLIB) || ""))}</select>
     </label>`;
+  updateModelHint();
   loadStickerSublibs();
 }
 
 function collectPersonaConfig() {
   const out = { ...(S.modal.configExtra || {}) };
+  delete out.LLM_PROVIDER;
+  delete out.LLM_MODEL;
+  delete out.LLM_BASE_URL;
+  const pair = $("#pModel")?.value || "";
+  if (pair) {
+    const [provider, modelId] = pair.split("|");
+    out.LLM_PROVIDER = provider;
+    out.LLM_MODEL = modelId;
+    const base = modelBase(pair);
+    if (base) out.LLM_BASE_URL = base;
+  }
   for (const input of $$("#pConfigFields [data-config-key]")) {
     const key = input.dataset.configKey;
     const raw = input.value.trim();
@@ -1462,6 +1545,9 @@ function bindPersonaModal() {
     if (e.target === $("#personaModal")) closePersonaModal();
   });
   $("#pSave").addEventListener("click", savePersonaModal);
+  $("#pConfigFields").addEventListener("change", (e) => {
+    if (e.target && e.target.id === "pModel") updateModelHint();
+  });
   $("#pTemplateFormat").addEventListener("click", fillPersonaFormatTemplate);
   $("#pName").addEventListener("input", () => {
     if (!S.modal.avatarData && !S.modal.avatarExisting) updateAvatarPreview();
@@ -2023,6 +2109,214 @@ function bindMiddleScroll() {
   });
 }
 
+/* ---------------- 新手向导 ---------------- */
+function renderGuideMarkdown(md) {
+  const inline = (s) => esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
+  const out = [];
+  let list = "";
+  let code = null;
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = ""; } };
+  const closeCode = () => {
+    if (code) { out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`); code = null; }
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line.startsWith("```")) {
+      closeList();
+      if (code) closeCode(); else code = [];
+      continue;
+    }
+    if (code) { code.push(raw); continue; }
+    if (!line) { closeList(); continue; }
+    const h = line.match(/^(#{1,4})\s+(.+)$/);
+    if (h) {
+      closeList();
+      out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`);
+      continue;
+    }
+    if (/^---+$/.test(line)) { closeList(); out.push("<hr>"); continue; }
+    if (line.startsWith(">")) {
+      closeList();
+      out.push(`<blockquote>${inline(line.replace(/^>\s?/, ""))}</blockquote>`);
+      continue;
+    }
+    const ul = line.match(/^[-*]\s+(.+)$/);
+    if (ul) {
+      if (list !== "ul") { closeList(); out.push("<ul>"); list = "ul"; }
+      out.push(`<li>${inline(ul[1])}</li>`);
+      continue;
+    }
+    const ol = line.match(/^\d+\.\s+(.+)$/);
+    if (ol) {
+      if (list !== "ol") { closeList(); out.push("<ol>"); list = "ol"; }
+      out.push(`<li>${inline(ol[1])}</li>`);
+      continue;
+    }
+    closeList();
+    out.push(`<p>${inline(line)}</p>`);
+  }
+  closeList();
+  closeCode();
+  return out.join("");
+}
+
+function initGuide() {
+  const orb = $("#guideOrb");
+  const menu = $("#guideMenu");
+  const modal = $("#guideTutorialModal");
+  const body = $("#guideTutorialBody");
+  if (!orb || !menu || !modal || !body) return;
+
+  const POS_KEY = "qai-guide-pos";
+  const VISIBLE_KEY = "qai-guide-visible";
+  let drag = null;
+  let lastDragAt = 0;
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const size = () => orb.offsetWidth || 62;
+
+  function readVisible() {
+    try { return localStorage.getItem(VISIBLE_KEY) === "1"; } catch (e) { return false; }
+  }
+  function saveVisible(v) {
+    try { localStorage.setItem(VISIBLE_KEY, v ? "1" : "0"); } catch (e) {}
+  }
+  function readPos() {
+    try { return JSON.parse(localStorage.getItem(POS_KEY) || "null"); } catch (e) { return null; }
+  }
+  function savePos() {
+    try {
+      localStorage.setItem(POS_KEY, JSON.stringify({
+        left: parseFloat(orb.style.left) || orb.getBoundingClientRect().left,
+        top: parseFloat(orb.style.top) || orb.getBoundingClientRect().top,
+      }));
+    } catch (e) {}
+  }
+  function place(pos) {
+    if (!pos || !Number.isFinite(Number(pos.left)) || !Number.isFinite(Number(pos.top))) return;
+    const s = size();
+    orb.style.left = `${clamp(Number(pos.left), 8, window.innerWidth - s - 8)}px`;
+    orb.style.top = `${clamp(Number(pos.top), 8, window.innerHeight - s - 8)}px`;
+    orb.style.right = "auto";
+    orb.style.bottom = "auto";
+  }
+  function showGuide() {
+    orb.classList.remove("hidden", "fading");
+    place(readPos());
+  }
+  function hideGuideMenu() {
+    menu.classList.add("hidden");
+    menu.classList.remove("below");
+  }
+  function openGuideMenu() {
+    menu.classList.remove("hidden");
+    const r = orb.getBoundingClientRect();
+    const m = menu.getBoundingClientRect();
+    const below = r.top - m.height - 12 < 8;
+    menu.classList.toggle("below", below);
+    menu.style.left = `${clamp(r.left + r.width / 2 - m.width / 2, 8, window.innerWidth - m.width - 8)}px`;
+    menu.style.top = `${below ? r.bottom + 12 : r.top - m.height - 12}px`;
+  }
+  async function openGuideTutorial() {
+    hideGuideMenu();
+    modal.classList.remove("hidden");
+    body.innerHTML = '<div class="empty-state">正在加载教程…</div>';
+    try {
+      const r = await api("/api/tutorial");
+      body.innerHTML = renderGuideMarkdown(r.text || "");
+      body.scrollTop = 0;
+    } catch (e) {
+      body.innerHTML = `<div class="empty-state">教程读取失败：${esc(e.message)}</div>`;
+    }
+  }
+  function closeGuideTutorial() {
+    modal.classList.add("hidden");
+  }
+  function closeGuideForever() {
+    hideGuideMenu();
+    saveVisible(false);
+    orb.classList.add("fading");
+    setTimeout(() => {
+      orb.classList.add("hidden");
+      orb.classList.remove("fading");
+    }, 320);
+    toast("新手向导已关闭，可在「主题与布局 → 唤醒向导」重新开启");
+  }
+
+  if (readVisible()) requestAnimationFrame(showGuide);
+
+  $("#wakeGuide")?.addEventListener("click", () => {
+    saveVisible(true);
+    showGuide();
+    $("#appearanceModal")?.classList.add("hidden");
+    toast("新手向导已唤醒");
+  });
+
+  orb.addEventListener("click", (e) => {
+    if (e.button !== 0) return;
+    if (Date.now() - lastDragAt < 280) return;
+    openGuideTutorial();
+  });
+  orb.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openGuideTutorial(); }
+  });
+  orb.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openGuideMenu();
+  });
+
+  orb.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    const r = orb.getBoundingClientRect();
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, left: r.left, top: r.top, moved: false };
+    orb.setPointerCapture?.(e.pointerId);
+    orb.classList.add("dragging");
+  });
+  orb.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (Math.hypot(dx, dy) > 4) drag.moved = true;
+    if (!drag.moved) return;
+    const s = size();
+    orb.style.left = `${clamp(drag.left + dx, 8, window.innerWidth - s - 8)}px`;
+    orb.style.top = `${clamp(drag.top + dy, 8, window.innerHeight - s - 8)}px`;
+    orb.style.right = "auto";
+    orb.style.bottom = "auto";
+  });
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const moved = drag.moved;
+    drag = null;
+    orb.classList.remove("dragging");
+    if (moved) { lastDragAt = Date.now(); savePos(); }
+  };
+  orb.addEventListener("pointerup", endDrag);
+  orb.addEventListener("pointercancel", endDrag);
+
+  document.addEventListener("pointerdown", (e) => {
+    if (menu.classList.contains("hidden")) return;
+    if (menu.contains(e.target) || orb.contains(e.target)) return;
+    hideGuideMenu();
+  });
+  $("#guideNo")?.addEventListener("click", hideGuideMenu);
+  $("#guideYes")?.addEventListener("click", closeGuideForever);
+  $("#guideTutorialClose")?.addEventListener("click", closeGuideTutorial);
+  $("#guideTutorialDone")?.addEventListener("click", closeGuideTutorial);
+  modal.addEventListener("click", (e) => { if (e.target === modal) closeGuideTutorial(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (!modal.classList.contains("hidden")) closeGuideTutorial();
+      if (!menu.classList.contains("hidden")) hideGuideMenu();
+    }
+  });
+}
+
 /* ---------------- 启动 ---------------- */
 function bindGlobal() {
   window.addEventListener("hashchange", () => activateTab(location.hash.slice(1) || "dashboard"));
@@ -2052,6 +2346,8 @@ function bindGlobal() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   bindGlobal();
+  initGuide();
+  await loadModels().catch(() => {});
   try {
     await loadStatus();
   } catch (e) {
