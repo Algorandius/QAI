@@ -1,0 +1,22 @@
+{
+  "name": "QAI 管理控制台",
+  "short_name": "QAI",
+  "description": "QAI 机器人的人设、群管理、聊天记录与好感度控制台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0c12",
+  "theme_color": "#0b0d13",
+  "icons": [
+    {
+      "src": "/qai-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/qai-icon-64.png",
+      "sizes": "64x64",
+      "type": "image/png"
+    }
+  ]
+}
