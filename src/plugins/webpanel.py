@@ -119,6 +119,7 @@ ENV_QUICK_GROUPS: list[dict] = [
         "title": "图像能力",
         "items": [
             {"key": "AI_VISION", "label": "识图", "type": "bool", "unit": "", "min": 0, "max": 1, "default": False, "desc": "允许模型理解图片（需要视觉模型）", "requires": "image"},
+            {"key": "AI_VISION_SEARCH", "label": "识图联网核对", "type": "bool", "unit": "", "min": 0, "max": 1, "default": True, "desc": "识图后结合联网内容核对图片信息", "requires": "image"},
             {"key": "AI_VISION_MAX_IMAGES", "label": "单轮识图张数", "type": "int", "unit": "张", "min": 1, "max": 5, "default": 2, "desc": "一次最多把几张图送给模型", "requires": "image"},
             {"key": "AI_IMAGE_MAX_PER_TURN", "label": "单轮发图张数", "type": "int", "unit": "张", "min": 1, "max": 5, "default": 1, "desc": "一次回复最多发几张图片", "requires": "image"},
             {"key": "AI_IMAGE_TRIGGER_PROB", "label": "主动配图概率", "type": "percent", "unit": "%", "min": 0, "max": 100, "default": 0.4, "desc": "主动找图/配图的概率", "requires": "image"},
@@ -189,6 +190,7 @@ def _apply_env_hot(values: dict[str, object]) -> None:
             "AI_GROUP_AUTO_COOLDOWN": "AI_GROUP_AUTO_COOLDOWN",
             "LLM_TEMPERATURE": "LLM_TEMPERATURE",
             "AI_VISION_MAX_IMAGES": "AI_VISION_MAX_IMAGES",
+            "AI_VISION_SEARCH": "AI_VISION_SEARCH",
             "AI_IMAGE_MAX_PER_TURN": "AI_IMAGE_MAX_PER_TURN",
             "AI_IMAGE_TRIGGER_PROB": "AI_IMAGE_TRIGGER_PROB",
             "AI_IMAGE_COOLDOWN": "AI_IMAGE_COOLDOWN",
@@ -201,7 +203,8 @@ def _apply_env_hot(values: dict[str, object]) -> None:
         if "AI_GROUP_AUTO" in values:
             ai.AI_GROUP_AUTO = bool(values["AI_GROUP_AUTO"])
             ai.AUTO_ENABLED = bool(values["AI_GROUP_AUTO"])
-        for key, attr in (("AI_VISION", "AI_VISION"), ("AI_POKE", "AI_POKE"),
+        for key, attr in (("AI_VISION", "AI_VISION"), ("AI_VISION_SEARCH", "AI_VISION_SEARCH"),
+                          ("AI_POKE", "AI_POKE"),
                           ("AI_LONGTERM", "AI_LONGTERM"), ("AI_STICKER", "AI_STICKER")):
             if key in values:
                 setattr(ai, attr, bool(values[key]))
