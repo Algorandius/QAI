@@ -77,6 +77,8 @@ AI_QUOTE_HIST = env_bool("AI_QUOTE_HIST", True)
 # 想开就换支持视觉的模型（如智谱 GLM-4.5V、硅基流动的 Qwen/Qwen2.5-VL）
 AI_VISION = env_bool("AI_VISION", False)
 AI_VISION_MAX_IMAGES = max(1, env_int("AI_VISION_MAX_IMAGES", 2))
+# 识图后允许模型结合联网结果核对图片内容
+AI_VISION_SEARCH = env_bool("AI_VISION_SEARCH", True)
 # 单轮最多发几张图（模型可能一次要好几张，限制一下别刷屏）
 AI_IMAGE_MAX_PER_TURN = max(1, env_int("AI_IMAGE_MAX_PER_TURN", 1))
 # 主动配图概率：不是被明确要求时，只有这个概率才允许发图（调小 = 更少发图）
@@ -695,8 +697,9 @@ def build_tools(
             "function": {
                 "name": WEB_SEARCH_TOOL,
                 "description": (
-                    "联网搜索网页。只在被问到需要实时/准确信息的时候用："
-                    "新闻、价格、天气、赛事、某个东西现在怎么样了、你不确定的事实。"
+                    "联网搜索网页。用于需要实时/准确信息，或需要核实图片中的人物、地点、"
+                    "事件、商品、作品和文字内容的场合；新闻、价格、天气、赛事、"
+                    "某个东西现在怎么样了、你不确定的事实也可以搜。"
                     "日常闲聊、情绪对话、你已经知道的常识，不要搜。"
                     "搜到结果后如果摘要不够，可以用 " + WEB_FETCH_TOOL + " 打开最相关那一页看正文。"
                 ),
@@ -1369,7 +1372,8 @@ async def _(bot: Bot, event: MessageEvent):
         "· 不要输出 [表情包：...]、[图片：...]、[语音]、[视频]、[文件] 这类你发不出来的标记。"
     )
     # 联网能力：只在真的给了工具时才说"你能查"，否则模型会想调却调不到
-    if web_tools.enabled() and not auto_trigger:
+    web_ready = web_tools.enabled() and not auto_trigger
+    if web_ready:
         rich_hint += (
             "\n· 你**可以联网查**：被问到新闻、天气、价格、比分、某个东西现在怎么样了，"
             "或者你确实不确定的事实，先调 web_search 搜一下；摘要不够再调 web_fetch 打开最相关那页看正文。"
@@ -1378,6 +1382,14 @@ async def _(bot: Bot, event: MessageEvent):
         )
     else:
         rich_hint += "\n· 这一轮你没有联网能力，不知道就说不知道，别编。"
+    if images and AI_VISION and AI_VISION_SEARCH and web_ready:
+        rich_hint += (
+            "\n【这一轮对方发了图片】\n"
+            "· 先看清图片本身，再决定要不要查。图里如果有人物、地点、商品、事件、新闻、作品、"
+            "文字或你不确定的内容，先调 web_search 查证；摘要不够再调 web_fetch。\n"
+            "· 回复时把「图里看到的」和「网上查到的」合起来说；图上没有的细节不要编。\n"
+            "· 如果只是表情包、梗图、随手拍或情绪图，不需要为了搜索而搜索，直接回应。"
+        )
     # 长期记忆：只有“非自主接话”才给写/删工具；自主接话只看已有记忆，避免她乱记
     allow_memory = bool(AI_LONGTERM and _LT_KEY and not auto_trigger)
     if AI_LONGTERM and _LT_KEY:
@@ -1505,7 +1517,7 @@ async def _(bot: Bot, event: MessageEvent):
         elif now - LAST_CUSTOM_STICKER.get(scene_id, 0.0) > AI_CUSTOM_STICKER_COOLDOWN:
             allow_sticker = random.random() < AI_CUSTOM_STICKER_PROB
     # 联网搜索：主动插话（只是随便接一句）不给工具，免得没事就上网查
-    allow_web = web_tools.enabled() and not auto_trigger
+    allow_web = web_ready
     # 戳一拍：只在群聊、且不是"自己凑过去接话"时给，免得突然戳不相干的人
     allow_poke = AI_POKE and is_group and not auto_trigger
     tools = build_tools(
