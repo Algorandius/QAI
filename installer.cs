@@ -22,6 +22,7 @@ using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -31,6 +32,12 @@ static class QaiSetup
 {
     const string ApiUrl = "https://api.github.com/repos/Algorandius/QAI/releases/latest";
     public const string ProjectUrl = "https://github.com/Algorandius/QAI";
+
+    // 内置安装包（离线版才有）：编译时用 /resource: 塞进来，
+    // 有它就直接装、完全不联网；没有就当在线版用。
+    public const string PayloadName = "QAI.payload.zip";
+    public const string PayloadShaName = "QAI.payload.sha256";
+
     static readonly string[] Mirrors = new string[]
     {
         "",
@@ -44,6 +51,43 @@ static class QaiSetup
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         Application.Run(new SetupForm());
+    }
+
+    public static bool HasPayload()
+    {
+        return Assembly.GetExecutingAssembly().GetManifestResourceStream(PayloadName) != null;
+    }
+
+    /// <summary>把内置 zip 释放到临时目录并校验，返回 zip 路径；没有内置包返回 null。</summary>
+    public static string ExtractPayload()
+    {
+        Assembly asm = Assembly.GetExecutingAssembly();
+        using (Stream src = asm.GetManifestResourceStream(PayloadName))
+        {
+            if (src == null) return null;
+            string zip = Path.Combine(Path.GetTempPath(), "qai-payload.zip");
+            using (FileStream fs = new FileStream(zip, FileMode.Create, FileAccess.Write))
+            {
+                byte[] buf = new byte[81920];
+                int n;
+                while ((n = src.Read(buf, 0, buf.Length)) > 0) fs.Write(buf, 0, n);
+            }
+            // 期望的校验值也编译进 exe，防止文件在传输中被截断
+            string expect = null;
+            using (Stream s2 = asm.GetManifestResourceStream(PayloadShaName))
+            {
+                if (s2 != null)
+                    using (StreamReader r = new StreamReader(s2))
+                        expect = (r.ReadToEnd() ?? "").Trim().Split(' ')[0].ToLowerInvariant();
+            }
+            if (!string.IsNullOrEmpty(expect))
+            {
+                string actual = Sha256Of(zip);
+                if (actual != expect)
+                    throw new Exception("内置安装包校验失败（文件可能损坏），请重新下载安装器。");
+            }
+            return zip;
+        }
     }
 
     public static string DefaultTarget()
@@ -277,10 +321,21 @@ class SetupForm : Form
         Controls.Add(_local);
 
         Label hint = new Label();
-        hint.Text = "连不上 GitHub 时用右边这个：从网盘/群里下载 QAI-…-Windows-x64.zip 后选进来。";
         hint.AutoSize = true;
         hint.ForeColor = Color.FromArgb(90, 90, 90);
         hint.Location = new Point(22, 202);
+        if (QaiSetup.HasPayload())
+        {
+            // 离线版：安装包就在这个 exe 里，全程不联网
+            hint.Text = "安装包已内置在本程序中，无需联网；解压约需十几秒。";
+            hint.ForeColor = Color.FromArgb(22, 128, 61);
+            _local.Visible = false;         // 内置包用不上「选本地 zip」
+            _install.Size = new Size(330, 40);
+        }
+        else
+        {
+            hint.Text = "连不上 GitHub 时用右边这个：从网盘/群里下载 QAI-…-Windows-x64.zip 后选进来。";
+        }
         Controls.Add(hint);
 
         _bar = new ProgressBar();
@@ -360,9 +415,32 @@ class SetupForm : Form
         _busy = true;
         SetBusy(true);
         Log("安装目录：" + target);
-        Thread t = new Thread(delegate() { InstallOnline(target); });
+        if (QaiSetup.HasPayload()) Log("使用内置安装包（不联网）");
+        Thread t = new Thread(delegate()
+        {
+            if (QaiSetup.HasPayload()) InstallEmbedded(target);
+            else InstallOnline(target);
+        });
         t.IsBackground = true;
         t.Start();
+    }
+
+    void InstallEmbedded(string target)
+    {
+        try
+        {
+            SetStatus("正在释放内置安装包…", 20);
+            string zip = QaiSetup.ExtractPayload();
+            if (zip == null) { InstallOnline(target); return; }
+            Log("内置安装包已就绪");
+            InstallFromZip(zip, target);
+        }
+        catch (Exception ex)
+        {
+            Fail(ex.Message);
+            SetBusy(false);
+            _busy = false;
+        }
     }
 
     void OnLocalZip(object sender, EventArgs e)
