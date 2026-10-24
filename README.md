@@ -1,486 +1,341 @@
-# QAI（QQ 群机器人 · NapCat + OneBot v11 + NoneBot2）
+<div align="center">
 
-一套**已经跑通验证过**的社区协议端机器人。收发消息、@、表情、图片、引用回复、撤回、  
-群成员查询、禁言、入群欢迎、戳一戳回应、AI 对话，全部实测可用。
+<img src="launcher_ui/qai-icon.png" width="96" alt="QAI">
 
-> **一键使用**：双击 `QAI.exe`（或桌面上的同名快捷方式），会打开桌面控制中心，
-> 自动拉起机器人，并在窗口内嵌完整管理控制台；启动/停止/重启、NapCat 状态与登录 WebUI 都在一个窗口里。
-> NapCat WebUI Token 也会自动从 `webui.json` 读取，不用翻日志。
-> 手动方式仍然是 `run.bat` + NapCat 启动脚本。
+# QAI
 
-> **便携版**：`dist\QAI-Portable-YYYYMMDD.zip`（约 21.0MB，含 Python 运行时和 WebView2 窗口依赖）。对方解压后双击
-> `QAI.exe`，按首次配置向导填 API Key、选 NapCat 目录即可，不需要装 Python。
->
-> **界面**：四套主题（幽静蓝 / 炫酷紫 / 清爽白 / 沉稳灰）、自定义背景色、卡片边缘拖拽缩放、
-> 鼠标跟随光晕、卡片点击抖动开关、界面布局（拖动+边缘缩放）、中文常用 .env 参数快捷编辑、渐变扫光、页面切换和滚动视差。
->
-> **模型（固定列表）**：GLM-4.7-Flash（免费）、GLM-5.3-Flash、GLM-5.3、DeepSeek-V4.1-Flash、
-> DeepSeek-V4-Pro、qwen3.8-flash、kimi-k3、Hy4 preview、Hy3。模型选择界面带
-> 识图 / 视频 / 原生联网 / 工具 / 推理 / 免费能力徽标，并按厂商分别保存 API Key。
->
-> **NapCat**：首次配置可直接下载安装到 `QAI\napcat`（约 120MB），也可选已有目录；QQNT、UAC 和扫码登录仍需用户完成。
+**本地运行的 QQ AI 机器人控制台**
 
-> **文档状态**：这份是搭建 / 接线教程；功能、参数、人设的最新状态以
-> [`使用说明.md`](使用说明.md) 为准。
+NapCat + NoneBot2 + OneBot v11  
+不用装 Python，不用改配置文件，不用开命令行
+
+[**下载 QAI 1.2.0**](https://github.com/Algorandius/QAI/releases/latest) ·
+[使用教程](新手教程.md) ·
+[问题反馈](https://github.com/Algorandius/QAI/issues)
+
+![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)
+![Version](https://img.shields.io/badge/version-1.2.0-6C5CE7)
+![License](https://img.shields.io/badge/license-MIT-2ECC71)
+
+</div>
 
 ---
 
-## 一、你需要准备的东西
+## 它是什么
 
-| 项目                                          | 说明                                                  |
-| ------------------------------------------- | --------------------------------------------------- |
-| 一台装了 **QQ 桌面端（QQNT ≥ 9.9.27）** 的 Windows 电脑 | NapCat 是「挂」在 QQ 客户端上工作的                             |
-| 一个**专门给机器人用的 QQ 小号**                        | **不要使用主号**，存在风控风险                              |
-| Node.js 18+ 或 Docker（可选）                    | 用 `NapCat.Shell.Windows.Node.zip` 这个包的话自带 Node，不用另装 |
-| Python 3.10+                                | 跑机器人本体                                              |
-| 一个大模型 API Key（可选）                           | 不配也能跑，只有 AI 对话用不了                                   |
+QAI 把 QQ 机器人需要的东西放进了一个桌面应用里：
+
+- NapCat 的安装、启动和扫码登录
+- NoneBot2 机器人的启动、停止和重启
+- 模型厂商、API Key 和模型选择
+- 人设、群绑定、记忆、好感度和表情库
+- 聊天记录、运行状态和日志
+
+打开一个窗口，就能完成从安装到聊天的全过程。
+
+## 1.2.0 新功能
+
+- **在线更新**：右键版本号检查更新，只下载 850KB 的更新包，聊天记录、人设、记忆和 Key 都保留。GitHub 打不开时还能用「从本地文件更新」。
+- **一键安装器**：下载 `QAI-Setup.exe` 双击即可，自动下载、校验、建快捷方式，不用解压。
+- **各厂商 Key 分开测试**：填完可以点「测试」，几秒内告诉你这个 Key 能不能用、报什么错。
+- **数据备份**：一键导出/导入 `data/`，换电脑或重装前先备份。
+- **后台运行**：关窗口时可以选「后台运行」，机器人继续在线，右下角托盘图标双击就能把界面叫回来。
+- **安全加固**：网页接口加了同源 + 令牌校验，别人没法再借网页往你电脑上装东西。
+
+## 三步开始
+
+### 1. 下载并打开
+
+到 [Releases](https://github.com/Algorandius/QAI/releases/latest) 下载 **`QAI-Setup.exe`**，双击后选个目录，剩下的它会自己做完（下载 → 校验 → 解压 → 建快捷方式 → 启动）。
+
+也可以下载 `QAI-<版本>-Windows-x64.zip`，解压后双击 `QAI.exe`。
+
+不需要安装 Python，也不需要单独下载 NapCat。
+
+> Windows 可能提示“未知发布者”。点“更多信息 → 仍要运行”即可。当前版本没有购买代码签名证书。
+> 连不上 GitHub 时，安装器里有「从本地 zip 安装」。
+
+### 2. 填模型
+
+点右上角齿轮 **模型配置**：
+
+1. 选择模型厂商
+2. 选择模型
+3. 填入对应的 API Key
+4. 保存
+
+支持智谱、DeepSeek、通义千问、Kimi、混元。每个厂商的 Key 分开保存。
+
+### 3. 登录 QQ 并启动
+
+1. 点 **安装到 QAI 目录**；GitHub 下载失败时，点 **夸克网盘** 下载后解压，再选择含 `launcher-win10.bat` 的目录
+2. 点 **启动 NapCat**，确认 UAC，扫码登录 QQ
+3. 登录成功后，打开 **模型配置 → NapCat**，点 **一键连接**
+4. 按 UAC 提示操作；如果 NapCat 要求重新登录，再扫码一次
+5. 回到 QAI，点 **启动**
+
+看到下面四项都正常，就可以在群里 @ 它，或者私聊聊天：
+
+- 机器人：运行中
+- 控制台：已就绪
+- NapCat：已启动
+- 连接：已连接
+
+第一次启动会自动展示新手教程，底部有「开始使用」。从第二次启动开始，悬浮向导默认关闭，需要在「主题与布局 → 唤醒向导」里打开。
 
 ---
 
-## 二、第一步：装 NapCat 并登录
+## 界面
 
-1. 打开 NapCat 的 GitHub Releases 页面：  
-   `https://github.com/NapNeko/NapCatQQ/releases`
-2. 下载 **`NapCat.Shell.Windows.Node.zip`**（约几十 MB，自带 Node 运行时）。
-   > 不要下载名字带 `OneKey` 的包，它启动时会联网下载 QQ，内置链接经常失效报 404。
-3. 解压到一个**纯英文、无空格**的目录，例如 `D:\napcat\`。
-4. **右键 → 以管理员身份运行** C（Win10/Win11 用这个；  
-   其他系统用 `launcher.bat`）。需要管理员权限是因为脚本要读注册表找 QQ 的安装路径。
-5. 弹出 QQ 登录窗口 → 用你的**机器人小号扫码登录**
-6. 登录成功后浏览器打开：`http://127.0.0.1:6099/webui`
-   - 首次登录需要的 Token 会打印在**刚才那个黑窗口的日志里**（也有的版本默认是 `napcat`）
-   - 进去后先把默认 Token 改掉
-7. **NapCat 的窗口不能关**，关了机器人就掉线。
+| 页面 | 作用 |
+| --- | --- |
+| 概览 | 运行状态、统计、人设展示、最近对话 |
+| 群与人设 | 每个群/私聊独立选择角色 |
+| 人设库 | 新建、导入、编辑角色与参数 |
+| 聊天记录 | 查看消息、图片、表情和发言角色 |
+| 好感度 | 群友分数、排名和彩虹进度条 |
+| 表情库 | 导入表情、标签、子库管理 |
+| 模型配置 | 厂商、模型、API Key、常用参数 |
 
-> 登录不上怎么办：新注册的 QQ 号、长期不用的号大概率被风控拦。  
-> 先在手机 QQ 上正常聊几天，再回来扫码。
+支持四套主题、自定义背景、卡片缩放/拖动、鼠标光晕和页面切换动效。
 
 ---
 
-## 三、第二步：配置 NapCat 连到机器人
+## 新手向导
 
-在 WebUI 里：**网络配置 → 新建 WebSocket 客户端（反向 WebSocket）**，填下面这些：
+第一次打开 QAI 会自动弹出新手教程，底部正中间是「开始使用」按钮。
 
-| 配置项    | 值                                                             |
-| ------ | ------------------------------------------------------------- |
-| 名称     | `NoneBot2`（随便起）                                               |
-| URL    | `ws://127.0.0.1:8080/onebot/v11/ws`                           |
-| 消息格式   | **Array**                                                     |
-| Token  | `qqbot-dev-token-2026`（要和 `.env` 里的 `ONEBOT_ACCESS_TOKEN` 一致） |
-| 心跳间隔   | 30000                                                         |
-| 重连间隔   | 5000                                                          |
-| 上报自身消息 | 关闭                                                            |
+从第二次启动开始，悬浮球默认隐藏。需要时点右上角彩虹圆环（主题与布局），再点「唤醒向导」。
 
-也可以直接导入项目里的 `napcat_reverse_ws.example.json`（复制其中的 `network` 块）。
+悬浮球是一个动态彩色半透明圆形，始终置顶：
 
-**Token 两边必须完全一致，不一致会一直连不上。**
+- 按住拖动，位置会自动记住
+- 点击打开新手教程
+- 右键弹出「要关闭新手向导吗？」
+- 点「否」或点其他地方，只关闭消息框，保留圆球
+- 点「是」，圆球渐变消失
+- 由悬浮球打开的教程没有开始按钮，点击教程外面即可关闭
 
 ---
 
-## 四、第三步：启动机器人
+## 模型
 
-在本项目目录下打开终端：
+| 模型 | 厂商 | 能力 |
+| --- | --- | --- |
+| GLM-4.7-Flash | 智谱 | 文本、工具、推理、免费 |
+| GLM-5.3-Flash | 智谱 | 文本、识图、视频、工具、推理 |
+| GLM-5.3 | 智谱 | 文本、工具、推理 |
+| DeepSeek-V4.1-Flash | DeepSeek | 文本、识图、工具、推理 |
+| DeepSeek-V4-Pro | DeepSeek | 文本、工具、推理 |
+| qwen3.8-flash | 通义千问 | 文本、识图、视频、联网、工具、推理 |
+| kimi-k3 | Kimi | 文本、识图、联网、工具、推理 |
+| Hy3 | 混元 | 文本、工具、推理 |
+| Hy4 preview | 混元 | 文本、识图、工具、推理 |
 
-```bat
-run.bat
+模型能力会显示在配置界面，识图模型才会出现图像相关参数。
+
+每个角色都可以在人设编辑里单独选择厂商和模型；留空则跟随「模型配置」里的默认模型。
+
+识图模型可开启「识图联网核对」：图片涉及人物、地点、事件、商品等信息时，先联网查证，再结合图片识别结果回复。
+
+---
+
+## 人设与记忆
+
+- 每个群/私聊可以绑定不同角色
+- 每个角色有自己的参数、可用表情子库和对话记忆
+- 切换角色会载入该角色在这个场景的记忆，切回可以恢复
+- 长期记忆和好感度按场景共享
+- 删除角色会清理对应绑定，不会自动删除聊天记录
+
+人设目录格式很简单：
+
+```text
+personas/
+└─ example/
+   ├─ persona.txt
+   └─ config.json
 ```
 
-或者手动执行：
+仓库自带一个原创示例人设「小满」，可以直接改成你自己的角色。
 
-```bat
+---
+
+## 数据与隐私
+
+QAI 默认只监听本机：
+
+```text
+机器人   127.0.0.1:8080
+管理台   127.0.0.1:8081
+控制中心 127.0.0.1:8082
+NapCat   127.0.0.1:6099
+```
+
+以下数据只保存在本机：
+
+- `data/`：对话记忆、长期记忆、心情、好感度、绑定关系
+- `assets/stickers/`：表情图片
+- `logs/`：运行日志
+- `.env`：Token、模型 Key、本地配置
+
+QAI 本身不上传这些数据。聊天内容会发送给你选择的模型厂商，具体以厂商的隐私政策为准。
+
+---
+
+## 关闭 QAI
+
+点窗口右上角 X 会先问你一句：
+
+- **后台运行**：界面关掉，机器人和启动器留在后台继续回消息。右下角会出现 QAI 图标，双击就能把界面叫回来（不会重复启动）。
+- **完全退出**：停止机器人、停止控制台、退出启动器，释放 8080 / 8081 / 8082。
+
+勾选「记住我的选择」以后就不再询问，之后可以在 **设置 → 关闭窗口时** 随时改回来。
+
+NapCat 是独立进程，不会随 QAI 一起退出。如果希望 QQ 也下线，先在顶部点「停止 NapCat」，再关闭窗口。
+
+窗口卡死时才需要双击 `停止QAI.bat`；正常关闭不用它。
+
+---
+
+## 常见问题
+
+<details>
+<summary><b>提示“未知发布者” / SmartScreen 拦截</b></summary>
+
+当前 exe 没有代码签名。点“更多信息 → 仍要运行”。
+
+如果公司电脑有安全策略，需要把 QAI 目录加入白名单。
+
+</details>
+
+<details>
+<summary><b>NapCat 一键安装失败</b></summary>
+
+常见报错是 `WinError 10054` 或连接超时，说明当前网络到 GitHub 的下载连接被重置。
+
+处理方式：
+
+1. 打开 [夸克网盘 NapCat](https://pan.quark.cn/s/3dc6f10f0ebd)，下载后解压
+2. 或挂代理/VPN 后重新点「安装到 QAI 目录」
+3. 也可以打开 [NapCat 官方下载页](https://github.com/NapNeko/NapCatQQ/releases)，手动下载 Windows Node 包
+4. 解压后，把包含 `launcher-win10.bat` 的目录填到「NapCat 目录」
+
+</details>
+
+<details>
+<summary><b>NapCat 启动后没有二维码</b></summary>
+
+先确认 NapCat 窗口没有关闭。扫码登录必须由你本人完成。
+
+如果 NapCat 目录不完整，重新点“安装 NapCat”，或选择已有的 `launcher-win10.bat` 所在目录。
+
+</details>
+
+<details>
+<summary><b>机器人显示未连接</b></summary>
+
+检查：
+
+1. NapCat 是否已登录 QQ
+2. QAI 的「机器人」和「控制台」是否都在运行
+3. `.env` 里的 `ONEBOT_ACCESS_TOKEN` 是否和 NapCat 反向 WebSocket 的 Token 一致
+
+也可以在「模型配置 → NapCat」里点 **一键连接**：它会自动写入反向 WebSocket 地址和 Token，然后重启 NapCat。
+
+QAI 启动器会读取 NapCat 的 `config/webui.json`，一般不需要手动填 WebUI Token。
+
+</details>
+
+<details>
+<summary><b>模型报 401 / 403 / 余额不足</b></summary>
+
+401/403 通常是 Key 填错、Key 与厂商不匹配，或模型没有开通。
+
+余额不足、限流和地区限制由模型厂商返回，QAI 只负责显示错误。
+
+</details>
+
+<details>
+<summary><b>端口被占用</b></summary>
+
+默认使用 8080 / 8081 / 8082 / 6099。
+
+先关闭旧的 QAI、NapCat 或 QQ 进程，再重新启动。不要同时开两份 QAI。
+
+</details>
+
+<details>
+<summary><b>怎么彻底重置</b></summary>
+
+关闭 QAI 后删除 `data/` 和 `logs/`，重新启动。
+
+`.env` 里的 API Key 和配置不会自动删除。
+
+</details>
+
+---
+
+## 从源码运行
+
+只有开发或二次开发才需要这一节。普通用户直接用 Releases 里的便携包。
+
+<details>
+<summary><b>展开源码运行步骤</b></summary>
+
+需要 Windows、Python 3.10+、Git。
+
+```powershell
+git clone https://github.com/Algorandius/QAI.git
+cd QAI
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-python bot.py
+copy .env.example .env
 ```
 
-看到这几行就说明启动成功：
-
-```
-[SUCCESS] nonebot | Succeeded to load plugin "basic" ...
-[SUCCESS] nonebot | Succeeded to load plugin "ai_chat" ...
-[INFO] uvicorn | Uvicorn running on http://127.0.0.1:8080
-```
-
-然后 NapCat 那边会自动连上来，机器人日志会多一行：
-
-```
-[SUCCESS] nonebot | OneBot V11 123456 | Bot connected
-```
-
----
-
-## 五、第四步：不登录 QQ 也能自检（强烈建议先做）
-
-项目里带了两个测试工具，**不用真的发 QQ 消息**就能验证链路。
-
-### 1. 链路自检
-
-保持机器人运行，另开一个终端：
-
-```bat
-python tools/fake_client.py
-```
-
-它会伪装成一个协议端连上来，发 `/ping`、`/help`、`/me`、以及一条 `@机器人 你好`，  
-然后打印机器人实际调用了哪些接口。看到 `[✓] 链路自检通过` 就说明收发全通。
-
-### 2. 用假模型跑通 AI 对话（不花一分钱）
-
-```bat
-:: 终端 A：启动假模型
-python tools/mock_llm.py
-
-:: 终端 B：把机器人指向假模型
-set LLM_API_KEY=mock
-set LLM_BASE_URL=http://127.0.0.1:9099/v1
-python bot.py
-```
-
-再跑 `python tools/fake_client.py`，就能看到机器人真的调了模型、真的回了话。  
-确认没问题后，再把 `.env` 里的 `LLM_API_KEY` 换成真实的 Key 重启即可。
-
----
-
-## 六、把机器人加进群
-
-把机器人小号拉进目标群，然后在群里直接发：
-
-```
-/help
-```
-
-就能看到全部指令。**首次体验建议先做两件事：**
-
-1. 在 `.env` 里把 `ALLOWED_GROUPS` 填成你的测试群号（多个用逗号分隔），别让它在大群里乱回。
-2. 在 `.env` 里把 `BOT_ADMIN_QQ` 填成你自己的 QQ 号，这样才能用 `/ban`、`/groups` 等管理指令。
-
-改完 `.env` **必须重启机器人**才生效。
-
----
-
-## 七、指令一览
-
-| 指令                | 作用                      | 演示的 OneBot 能力              |
-| ----------------- | ----------------------- | -------------------------- |
-| `/help`           | 指令菜单                    | —                          |
-| `/ping`           | 存活 + 消息往返延迟             | 基础收发                       |
-| `/echo <文本>`      | 原样回显                    | 文本消息                       |
-| `/me`             | 查你的群名片、角色、入群时间          | `get_group_member_info`    |
-| `/at <QQ> [文本]`   | @ 某人                    | `MessageSegment.at`        |
-| `/face`           | 随机 QQ 表情                | `MessageSegment.face`      |
-| `/img <URL 或文件名>` | 发图片（本地图放 `assets/`）     | `MessageSegment.image`     |
-| `/reply <文本>`     | 引用你的消息回复                | `MessageSegment.reply`     |
-| `/recall`         | 撤回机器人上一条消息；回复某条消息再发则撤那条 | `delete_msg`               |
-| `/members`        | 群成员列表（前 15 人）           | `get_group_member_list`    |
-| `/groups`         | 机器人所在群列表（仅管理员）          | `get_group_list`           |
-| `/ban @某人 10`     | 禁言 10 分钟（上限 60）         | `set_group_ban`            |
-| `/unban @某人`      | 解除禁言                    | `set_group_ban`            |
-| `/status`         | 运行时长、收发计数、配置是否生效        | —                          |
-| `/aireset`        | 清空本群对话记忆                | —                          |
-| `/人格 [名字]`      | 列出 / 切换人设（保留对话记忆） | —                          |
-| `/接话 开\|关`      | 自主接话开关                    | —                          |
-| `/好感`            | 自己 + 本群好感度                | —                          |
-| `/记忆`            | 查看 / 删除本场景长期记忆            | —                          |
-| `/清理记忆`          | 立即清理过期对话 / 日志             | —                          |
-| `/心情`（`/mood`）   | 当前心情                       | —                          |
-| `/表情包`           | 随机发一个收藏表情包               | `fetch_custom_face`        |
-| `/建表情库`          | 拉收藏 → 下载 → 视觉自动打标签        | `fetch_custom_face`        |
-| 群里 **@机器人 + 内容**  | AI 对话                   | 大模型调用                      |
-| **私聊直接说话**        | AI 对话                   | 大模型调用                      |
-| 戳一戳机器人            | 自动回应                    | `notice` 事件                |
-| 有人进群              | 自动欢迎                    | `GroupIncreaseNoticeEvent` |
-
----
-
-## 八、目录结构
-
-```
-qqbot/
-├── bot.py                 入口：起反向 WebSocket 服务，等 NapCat 连上来
-├── .env                   ★ 所有配置（Token、白名单、模型 Key、各参数的 .env 默认值）
-├── requirements.txt
-├── run.bat                手动启动（会先按端口清掉旧实例）
-├── QAI.exe                单文件应用入口（原生启动壳，双击即可）
-├── 重启QAI.bat            结束旧 8082 进程并重新打开
-├── 停止QAI.bat            只结束控制中心，不影响机器人
-├── 启动QAI.vbs            VBS 备用入口（无黑窗口）
-├── 启动QAI.bat            同上，带控制台窗口，排错用
-├── QAI.lnk                快捷方式（指向 exe）
-├── launcher_entry.cs       exe 的源码（csc 重新编译用）
-├── launcher.py            桌面控制中心后端（进程/状态/NapCat/首次配置/8082）
-├── build_portable.py      便携包构建（runtime + 脱敏 + exe + zip）
-├── launcher_ui/           桌面控制中心外壳（QAI 封面/状态栏 + 内嵌 8081 控制台）
-├── launcher_ui/models.js  多厂商/模型目录与能力徽标
-├── launcher_ui/theme.css  四套主题变量 + 动效
-├── launcher_ui/theme.js   主题切换 / 鼠标跟随 / 卡片抖动 / iframe 同步
-├── webpanel_ui/theme.css  管理台主题（与 launcher 同一份）
-├── webpanel_ui/theme.js   管理台主题/动效（与 launcher 同一份）
-├── napcat_reverse_ws.example.json   NapCat 网络配置模板
-├── README.md / 使用说明.md / context.md
-├── personas/              ★ 多套人设（每套 persona.txt + config.json）
-│   ├── example/           原创示例人设「小满」（随包发布，可自己复制改名）
-│   └── （其它目录）         你自己的角色，只留在本机，不会打进官方安装包
-├── data/                  对话记忆、长期记忆、心情、好感度、人设绑定、聊天日志
-├── assets/                本地图片（/img 用）；assets/stickers/ 是表情库
-├── logs/inbound.log       收消息原始结构（排错用）
-├── src/
-│   ├── config.py          读 .env 的小工具
-│   ├── stats.py           运行统计
-│   ├── memory.py          记忆 / 心情 / 好感度 / 压缩 / 日志 / TTL 清理
-│   ├── longterm.py        长期记忆（偏好 / 约定 / 重要经历）
-│   ├── maintenance.py     自动清理调度（对话 / 长期记忆 / 日志）
-│   ├── personas.py        多套人设 + 按群绑定 + 参数解析
-│   ├── image_search.py    搜图
-│   ├── sticker_lib.py     本地表情库
-│   ├── web_tools.py       DeepSeek Search / Fetch
-│   └── plugins/
-│       ├── basic.py       基础指令 + 事件监听
-│       ├── ai_chat.py     AI 对话核心（上下文、冷却、工具、拟人分句）
-│       ├── webpanel.py    Web 控制台后端（静态文件 + JSON API）
-│       ├── msglog.py      收消息诊断日志
-│       └── lifecycle.py   掉线回归播报
-├── webpanel_ui/           控制台前端（index.html / app.css / app.js）
-└── tools/
-    ├── fake_client.py     链路自检（不需要真 QQ）
-    ├── mock_llm.py        本地假模型（不需要真 API Key）
-    └── check_llm.py       模型连通性诊断
-```
-
----
-
-## 九、常见问题排查
-
-| 现象                                                                  | 原因 / 解决                                                          |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| NapCat 日志里一直重连失败                                                    | Token 与 `.env` 的 `ONEBOT_ACCESS_TOKEN` 不一致；或机器人没启动               |
-| 机器人收不到消息                                                            | NapCat 没登录；或群不在 `ALLOWED_GROUPS` 里（非空时会拦住其他群）                    |
-| 指令没反应                                                               | 命令前缀必须是 `/` 或 `!`；`.env` 里 `COMMAND_START` 被改过                   |
-| `/ban` 提示失败                                                         | 机器人自己也必须是管理员，且不能禁管理员                                             |
-| `/recall` 失败                                                        | 只能撤 2 分钟内的消息，且机器人要是管理员                                           |
-| AI 不回                                                               | 检查 `.env` 的 `LLM_API_KEY` 是否填了、`LLM_BASE_URL` 结尾不要多带 `/v1` 之外的路径 |
-| 端口 8080 被占用                                                         | 改 `.env` 里的 `PORT`，同时改 NapCat 里 URL 的端口                          |
-| 本机开了代理导致连不上                                                         | 给终端设置 `NO_PROXY=127.0.0.1,localhost`                             |
-| 启动 NapCat 弹窗 `Cannot find module '...\resources\app\loadNapCat.js'` | 见下方「附：NapCat 注入失败修复」                                             |
-| **改了 `.env` 或改了代码，重启后却没生效**    | 旧进程没退、占着 8080，新起的实例一启动就失败（你会以为"重启过了"）。**必须先彻底关掉旧黑窗口再启动**。确认：`netstat -ano \| findstr :8080` 看谁在监听，再用 `taskkill /F /PID <pid>` 杀掉 |
-| 机器人看不懂表情包 / 引用 / 图片              | 看 `logs/inbound.log`，确认 NapCat 实际发来的消息段是什么类型                                             |
-
----
-
-## 附：NapCat 注入失败修复（`Cannot find module ... loadNapCat.js`）
-
-**现象**：以管理员运行 `launcher-win10.bat` 后弹出 JS 错误框：
-
-```
-Error: Cannot find module 'D:\QQ\Versions\9.9.31-49738\resources\app\loadNapCat.js'
-```
-
-**原因**：这个报错说明 **Hook 已经生效了**（所以 QQ 才去找 `loadNapCat.js`），  
-但 `loadNapCat.js` 没被放进 QQ 的 app 目录。
-
-用**网页安装器**装的 QQ（`Versions\config.json` 里 `"channel": "QQweb"`）目录结构是：
-
-```
-D:\QQ\QQ.exe
-D:\QQ\Versions\<版本号>\resources\app\      ← 真正的 app 目录
-```
-
-而**标准安装**才是：
-
-```
-D:\QQ\resources\app\                        ← 这一层在你机器上不存在
-```
-
-NapCat 的注入器按标准结构去找，自然找不到 → 静默失败。（已实测：目录本身可写，不是权限问题。）
-
-**修复**：把 `loadNapCat.js` 手动放到真正的 app 目录。
-
-1. 复制 NapCat 目录下的 `loadNapCat.js` 到 `D:\QQ\Versions\<版本号>\resources\app\`
-2. 建议把它改成**自包含**版本，不依赖环境变量：
-
-```js
-const { pathToFileURL } = require('url');
-const DEFAULT_MAIN = 'E:/ChatBot/napcat/napcat.mjs';   // 改成你的 napcat.mjs 路径
-(async () => {
-  const mainPath = process.env.NAPCAT_MAIN_PATH || DEFAULT_MAIN;
-  await import(pathToFileURL(mainPath).href);
-})();
-```
-
-1. 再以管理员运行 `launcher-win10.bat` 即可。
-
-> 项目里的 `reinject.bat`（放在 NapCat 目录下）会自动定位 `Versions\*\resources\app`  
-> 并重新注入。**每次 QQ 自动更新后版本号目录会变，需要重新跑一次。**
-
-**注意**：不要改 `package.json` 的 `main` 字段。保持原样才不影响你日常正常启动 QQ；  
-Hook 只在通过 `launcher-win10.bat` 启动时才接管入口。
-
-**另外两点提醒**：
-
-- 如果 QQ 正在运行，先完全退出再运行 launcher，否则注入会打架。
-- 如果复制完文件「立刻消失」，是杀毒软件（360/火绒/电脑管家）在删它，  
-  把 QQ 安装目录和 NapCat 目录加进白名单即可。
-
----
-
-## 十、防风控注意事项（社区路线必读）
-
-走的是协议端方案，本质是让程序代替你登录 QQ，**违反 QQ 用户协议，有冻结风险**。降低风险的几条硬规则：
-
-1. **只用闲置小号**，绝不用主号；小号实名、绑盾、有正常聊天记录。
-2. **只做被动应答**，不要把机器人拿去群发、批量加好友、批量拉群、转发名片——这些是秒封行为。
-3. **控制频率**：`.env` 里的 `AI_COOLDOWN_SEC`（默认 5 秒）不要调太小；  
-   `AI_HUMANIZE=true` 会模拟真人分句发送，别关掉。
-4. **群白名单**一定要填，只在自己的小群里跑。
-5. 别频繁换机器、换 IP 登录同一个号；NapCat 的登录态文件做好备份，别每次都重新扫码。
-6. 发现「发消息失败率突然升高」或要求短信验证，立刻停掉，等几天再试，不要硬扛重试。
-
-> 另外：让 AI 冒充真人长期在群里聊天属于欺骗行为。建议群公告里说明这是机器人，  
-> 不要用它去做诱导、引流、刷屏之类的事。
-
----
-
-## 十一、已经修掉的两个坑（改代码时别踩回去）
-
-1. **群白名单判断写反**：`if not ALLOWED_GROUPS or ...: return` 会导致白名单为空时  
-   机器人什么都不回。正确写法是 `if ALLOWED_GROUPS and gid not in ALLOWED_GROUPS: return`。
-2. **判断「有没有 @ 我」不能用 `event.message`**：NoneBot 适配器会把 @机器人的消息段  
-   从 `event.message` 里**删掉**（原始内容在 `event.original_message`），  
-   同时置 `event.to_me = True`。所以必须用 `event.is_tome()` 判断。
-
----
-
-## 十二、能力说明
-
-- **连续对话 50 轮 + 跨重启记忆**：`AI_HISTORY_TURNS=50`；对话记忆落盘到
-  `data/state.json`，机器人重启后自动恢复。
-- **历史压缩**：`AI_COMPRESS=true` 时，把最旧的对话压缩成摘要卷进"长期记忆"
-  （注入 system prompt），保留最近 `AI_COMPRESS_KEEP_TURNS` 轮原文。省 token 又不丢上下文；
-  设 `AI_COMPRESS=false` 则 50 轮原文全发（更贵）。
-- **心情系统**：`AI_MOOD=true`。根据对方语气（夸/骂/谢/打招呼）微调机器人心情
-  （-10~+10），并注入"当前心情"提示词影响语气；`/mood` 可查看当前心情。
-- **主动发表情**：`AI_STICKER=true`，按 `AI_STICKER_PROB` 概率 + `AI_STICKER_COOLDOWN`
-  冷却，根据心情选 QQ 经典表情补一句。
-- **掉线回归播报**：NapCat 断开后重连，机器人会在 `AI_WELCOME_GROUPS`（缺省回退
-  `ALLOWED_GROUPS`）配置的群里发送提示。
-- **Web 控制台**：浏览器打开 `http://127.0.0.1:8081/`，包含概览、群与人设、人设库
-  （上传/新增人物、编辑正文与 config）、聊天记录筛选、好感度排行、表情库、设置（白名单/管理员/.env 打码）。
-  前端在 `webpanel_ui/`，改完刷新即可；后端 `src/plugins/webpanel.py`。开关 `WEB_PANEL`、端口 `WEB_PANEL_PORT`。
-- **角色独立选模型**：人设弹窗里给某个角色选「厂商 · 模型」后，这个角色就走自己的模型；
-  留空则跟随「模型配置」里的默认模型。每个厂商的 Key 存在 `.env` 的 `LLM_KEY_ZHIPU` /
-  `LLM_KEY_DEEPSEEK` / `LLM_KEY_QWEN` / `LLM_KEY_KIMI` / `LLM_KEY_HUNYUAN` 里，
-  可以在控制中心「模型配置 → 各厂商 Key」里分别填，**不需要改默认模型**。
-  保存后会重启一次机器人，新 Key 才生效（机器人只在启动时读 `.env`）。
-- **停止脚本按进程识别**：`停止QAI.bat` 会调用 `stop.py`，只结束本目录启动的
-  启动器 / 机器人 / 窗口进程（依据 `data/qai_pids.json` + 端口存活 + HTTP 身份 + 窗口标题互证）。
-  不会再像旧版那样「谁监听 8080/8081/8082 就杀谁」——8080 上是你自己的服务时不会被误杀。
-  想先看会停哪些进程，运行 `python stop.py --dry-run`。
-
-- **在线更新**：控制中心右上角显示版本号，点一下检查 GitHub 最新 Release。
-  有新版本时点「立即更新」即可，**只替换程序文件，不用重新下载整个安装包**，
-  聊天记录 / 长期记忆 / 好感度 / 人设 / `.env` 里的 Key 全部保留。
-  实现：`version.py`（版本号唯一来源）、`updater.py`（只覆盖白名单路径 + 备份旧文件）、
-  `launcher.py` 的 `/api/update/check`、`/api/update/apply`、`/api/update/from-file`。
-  更新包 `QAI-<版本>-update.zip` 由 `build_portable.py` 生成，约 800KB。
-
-#### 连不上 GitHub 怎么办
-
-更新通路做了四层，任何一层可用就能更新：
-
-| 层级 | 做法 | 说明 |
-|---|---|---|
-| 1 | `QAI_UPDATE_MANIFEST` | 指向自建 JSON 清单，**完全绕开 GitHub API**，可放网盘直链 / CDN / 自己的服务器 |
-| 2 | 直连 GitHub API | 有代理时自动走系统代理 |
-| 3 | 内置加速源 | `gh-proxy.com`、`github.chenc.dev`（与 NapCat 下载用的是同一组） |
-| 4 | **从本地文件更新** | 用户自己下载 zip 后选进来，**全程不联网** |
-
-- 换/加加速源：`.env` 里 `QAI_UPDATE_MIRRORS=https://你的加速前缀/,https://另一个/`
-- 自建清单（放 GitHub Pages / jsDelivr / 对象存储都行）：
-
-```json
-{
-  "version": "1.1.2",
-  "notes": "更新说明，显示在弹窗里",
-  "page": "https://github.com/Algorandius/QAI/releases/latest",
-  "update": {
-    "name": "QAI-1.1.2-update.zip",
-    "url": "https://你的存储/QAI-1.1.2-update.zip",
-    "size": 848000,
-    "sha256_url": "https://你的存储/QAI-1.1.2-update.zip.sha256"
-  }
-}
-```
-
-设了 `QAI_UPDATE_MANIFEST` 后会**优先**用它；它挂了才回落到 GitHub 和加速源。
-界面上「从本地文件更新」永远可用，不依赖任何网络。
-
-
-> 改 `.env` / 代码后，双击 `run.bat` 重启机器人即生效（它会自动清理旧进程）。
-
-## 十二点五、安全设计（改代码时别破坏）
-
-| 面 | 措施 |
-|---|---|
-| 启动器 8082 写接口 | 每次启动生成随机令牌注入首页 `<meta>`；POST 必须带 `X-QAI-Token`，且拒绝 `Sec-Fetch-Site: cross-site`。**表单提交设不了自定义头**，所以「用户随便打开个网页就能操控 QAI」被堵死 |
-| 管理台 8081 | 同样注入令牌；POST 校验令牌 + 同源。GET 也拒 cross-site（读接口靠 CORS 不暴露内容） |
-| 只拒 cross-site，放行 same-site | QAI 自己就是 8082 页面里嵌 8081 的 iframe，那是 same-site。别把 `same-site` 也拒了，否则管理台整块白屏 |
-| 在线更新 | 更新包 SHA256 **只从 GitHub 直连取**，绝不经过加速源；没有校验文件就不做在线更新。道理：镜像要是能同时改 zip 和 sha，校验等于没有 |
-| 更新落地 | [updater.py](updater.py) 只覆盖白名单路径（`data/` `.env` `runtime/` `QAI.exe` 永不碰）；落地前 `ast.parse` 预检所有 `.py`；写失败自动回滚备份；**无论成败都会把 QAI 拉起来** |
-| 数据导入 | zip 条目做路径穿越校验，只认 `data/` 下的路径，覆盖前先备份 |
-| 停止脚本 | 四路互证（pid 文件 + 端口存活 + HTTP 身份 + 窗口标题），绝不按端口盲杀 |
-| 文件权限 | 首次启动把 `.env` 和 `data/` 收紧到「当前用户 + SYSTEM + Administrators」（`icacls`），只做一次；不想改设 `QAI_SKIP_ACL=1` |
-| 发布脱敏 | 所有 `*_KEY` `*_TOKEN` `*_SECRET` 通配清空；OneBot Token 每次构建随机生成；CI 扫明文密钥 |
-
-## 十三、发版清单
-
-发版时只改一个地方：`version.py` 里的 `VERSION`。
+编辑 `.env`，填入至少一个模型 Key，然后：
 
 ```powershell
-cd E:\huancun\2026-10-11-13-08-12\qqbot
-$env:BUILD_BASE_PYTHON = "C:\Users\fy688\.workbuddy\binaries\python\versions\3.13.12"
-.\.venv\Scripts\python.exe -m unittest discover -s tests
-.\.venv\Scripts\python.exe tools\check_env_keys.py
-.\.venv\Scripts\python.exe tools\check_secrets.py
-.\.venv\Scripts\python.exe build_portable.py
+python bot.py
 ```
 
-构建会产出五个文件，**五个都要上传**。少了任何一个都会出事：
+另开一个窗口：
 
-- 少 `-update.zip` → 老用户退回 21MB 完整包
-- **少任一 `.sha256` → 客户端直接拒绝在线更新**（没有校验文件就不更新，这是刻意的）
+```powershell
+python launcher.py
+```
+
+浏览器打开 `http://127.0.0.1:8081/` 可以只使用 Web 管理台。
+
+源码结构：
 
 ```text
-QAI-Setup.exe                      一键安装器（新用户首选，双击即可，不用解压）
-QAI-<版本>-Windows-x64.zip         完整包（手动安装 / 备选）
-QAI-<版本>-Windows-x64.zip.sha256  完整包校验
-QAI-<版本>-update.zip              更新包（老用户在线更新，约 850KB）
-QAI-<版本>-update.zip.sha256       更新包校验 ← 漏掉这个，在线更新会被拒绝
+src/                机器人核心
+src/plugins/        NoneBot 插件
+launcher_ui/        控制中心界面
+webpanel_ui/        Web 管理台
+personas/           人设目录
 ```
 
-`.sha256` 由 `build_portable.py` 的 `write_sha256()` 自动生成，不用手工算。
+更细的开发说明（接口、鉴权、构建与发版）见 [开发文档.md](开发文档.md)。
 
-然后：
+</details>
 
-```powershell
-gh release create v<版本> QAI-Setup.exe QAI-<版本>-Windows-x64.zip `
-  QAI-<版本>-Windows-x64.zip.sha256 QAI-<版本>-update.zip `
-  QAI-<版本>-update.zip.sha256 `
-  --repo Algorandius/QAI --title "QAI <版本>" --notes-file RELEASE_NOTES-v<版本>.md --latest
-```
+---
 
-一键安装器由 `installer.cs` 编译（`build_installer()`）：选目录 → 查最新版 → 下载完整包
-（直连 + 加速源逐个试）→ 校验 SHA256 → 解压 → 建桌面快捷方式 → 启动。
-连不上 GitHub 时，它界面上有「从本地 zip 安装」，可以直接选网盘下载的包。
+## 开源说明
 
-上传后自查：
+QAI 自身使用 [MIT License](LICENSE)。
 
-```powershell
-gh release view v<版本> --repo Algorandius/QAI --json assets,tagName
-```
+第三方组件和 NapCat 的许可证说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-更新器会优先找 `-update.zip`，没有就退回完整包（仍只取程序文件）。
-`launcher.py` 若拿到 `.sha256` 资产会先校验 SHA256，不一致直接中止。
+NapCat 不随本仓库分发，请从官方渠道获取并遵守其许可证。仓库中的示例人设为原创内容；公开提交时不要加入受版权保护的角色文本或头像。
 
-> 老用户点「立即更新」后：下载 → 校验 → 解压到 `data/_update/` → 启动 `updater.py` →
-> QAI 退出 → 更新器等端口释放 → 备份旧文件到 `data/_update_backup/<时间戳>/` → 覆盖程序文件 → 重新拉起 QAI。
-> 出问题可以从备份目录手工回滚。
+---
+
+<div align="center">
+
+如果 QAI 对你有帮助，可以点一个 Star。
+
+</div>
