@@ -326,7 +326,7 @@ class SetupForm : Form
         hint.Location = new Point(22, 202);
         if (QaiSetup.HasPayload())
         {
-            // 离线版：安装包就在这个 exe 里，全程不联网
+            // 安装包就在这个 exe 里，全程不联网
             hint.Text = "安装包已内置在本程序中，无需联网；解压约需十几秒。";
             hint.ForeColor = Color.FromArgb(22, 128, 61);
             _local.Visible = false;         // 内置包用不上「选本地 zip」
@@ -334,6 +334,7 @@ class SetupForm : Form
         }
         else
         {
+            // 没塞内置包的老版本 / 自编译版本，保留在线下载与本地选择
             hint.Text = "连不上 GitHub 时用右边这个：从网盘/群里下载 QAI-…-Windows-x64.zip 后选进来。";
         }
         Controls.Add(hint);

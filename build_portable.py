@@ -33,8 +33,7 @@ except Exception:
     APP_VERSION = "0.0.0"
 UPDATE_ZIP_PATH = DIST / f"QAI-{APP_VERSION}-update.zip"
 SETUP_EXE = DIST / f"QAI-Setup-{APP_VERSION}.exe"
-# 离线安装器：把完整包塞进 exe，双击就装、全程不联网
-SETUP_OFFLINE_EXE = DIST / f"QAI-Setup-{APP_VERSION}-offline.exe"
+# 内置包资源名：installer.cs 里靠它判断「这是离线安装器」
 PAYLOAD_NAME = "QAI.payload.zip"
 PAYLOAD_SHA_NAME = "QAI.payload.sha256"
 
@@ -527,11 +526,10 @@ def write_sha256(path: Path) -> Path:
 
 
 def build_installer() -> None:
-    """编译两个安装器：
+    """编译一键安装器（离线版）。
 
-    - SETUP_EXE            在线版（约 100KB），运行时从 Releases 下载完整包
-    - SETUP_OFFLINE_EXE    离线版（约 21MB），把完整包直接塞进 exe，
-                           双击就装、全程不联网，适合直接发给别人
+    把完整包和它的 SHA256 用 /resource 塞进 exe：双击就装、全程不联网，
+    发给别人只需要这一个文件。代价是体积等于完整包（约 21MB）。
     """
     log("编译一键安装器")
     csc = find_csc()
@@ -542,39 +540,29 @@ def build_installer() -> None:
     if not src.is_file():
         log("缺少 installer.cs，跳过安装器")
         return
+    sha_file = ZIP_PATH.with_name(ZIP_PATH.name + ".sha256")
+    if not ZIP_PATH.is_file() or not sha_file.is_file():
+        log("缺少完整包或校验文件，跳过安装器")
+        return
     icon = ROOT / "launcher_ui" / "app.ico"
-    base_cmd = [
+    cmd = [
         str(csc), "/nologo", "/target:winexe", "/optimize+",
         f"/win32icon:{icon}",
         "/r:System.Windows.Forms.dll",
         "/r:System.Drawing.dll",
         "/r:System.IO.Compression.FileSystem.dll",
-    ]
-
-    cmd = base_cmd + [f"/out:{SETUP_EXE}", str(src)]
-    rc, out = _run_cmd(cmd)
-    if rc != 0 or not SETUP_EXE.is_file():
-        log(f"在线安装器编译失败：{out[:400]}")
-    else:
-        log(f"在线安装器：{SETUP_EXE.name} ({SETUP_EXE.stat().st_size // 1024} KB)")
-
-    sha_file = ZIP_PATH.with_name(ZIP_PATH.name + ".sha256")
-    if not ZIP_PATH.is_file() or not sha_file.is_file():
-        log("缺少完整包或校验文件，跳过离线安装器")
-        return
-    cmd = base_cmd + [
         f"/resource:{ZIP_PATH},{PAYLOAD_NAME}",
         f"/resource:{sha_file},{PAYLOAD_SHA_NAME}",
-        f"/out:{SETUP_OFFLINE_EXE}",
+        f"/out:{SETUP_EXE}",
         str(src),
     ]
     rc, out = _run_cmd(cmd)
-    if rc != 0 or not SETUP_OFFLINE_EXE.is_file():
-        log(f"离线安装器编译失败：{out[:400]}")
+    if rc != 0 or not SETUP_EXE.is_file():
+        log(f"安装器编译失败：{out[:400]}")
         return
     log(
-        f"离线安装器：{SETUP_OFFLINE_EXE.name} "
-        f"({SETUP_OFFLINE_EXE.stat().st_size / 1024 / 1024:.1f} MB，含完整包)"
+        f"安装器：{SETUP_EXE.name} "
+        f"({SETUP_EXE.stat().st_size / 1024 / 1024:.1f} MB，已内置完整包)"
     )
 
 
