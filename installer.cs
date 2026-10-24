@@ -1,20 +1,19 @@
 // QAI 一键安装器
 //
-// 目的：让用户不用「下载 zip → 找解压软件 → 解压 → 再双击」，直接运行本 exe 即可。
+// 用途：一个 exe 完成解压安装，不需要手动解压 zip。
 //
-// 行为：
-//   1. 选一个安装目录（默认 %LOCALAPPDATA%\QAI）
-//   2. 点「一键安装」→ 查 GitHub 最新 Release → 下载完整包（直连 + 加速源逐个试）
-//      → 校验 SHA256 → 解压到安装目录 → 建桌面快捷方式 → 启动 QAI
-//   3. 连不上 GitHub 时，可以用「从本地 zip 安装」直接选已下载的包
+// 流程：
+//   1. 选择安装目录（默认 %LOCALAPPDATA%\QAI）
+//   2. 点「一键安装」→ 取 Releases 最新版 → 下载完整包（直连和加速源轮流试）
+//      → 校验 SHA256 → 解压 → 建桌面快捷方式 → 启动
+//   3. 下载失败时用「从本地 zip 安装」
 //
 // 编译（build_portable.py 会自动调用）：
 //   csc /nologo /target:winexe /r:System.Windows.Forms.dll /r:System.Drawing.dll
 //       /r:System.IO.Compression.FileSystem.dll /win32icon:launcher_ui\app.ico
 //       /out:QAI-Setup.exe installer.cs
 //
-// 注意：这里刻意用旧语法（C# 5），因为 Windows 自带的 .NET Framework csc.exe
-// 不支持字符串插值、?. 这些新语法。
+// 用 C# 5 语法：Windows 自带的 .NET Framework csc.exe 不支持字符串插值、?. 等新语法。
 
 using System;
 using System.Diagnostics;
@@ -33,8 +32,7 @@ static class QaiSetup
     const string ApiUrl = "https://api.github.com/repos/Algorandius/QAI/releases/latest";
     public const string ProjectUrl = "https://github.com/Algorandius/QAI";
 
-    // 内置安装包（离线版才有）：编译时用 /resource: 塞进来，
-    // 有它就直接装、完全不联网；没有就当在线版用。
+    // 内置安装包：编译时用 /resource: 塞入；存在时直接安装，不联网。
     public const string PayloadName = "QAI.payload.zip";
     public const string PayloadShaName = "QAI.payload.sha256";
 
@@ -112,8 +110,7 @@ static class QaiSetup
 
     static byte[] DownloadBytesWithTimeout(WebClient wc, string url, int timeoutMs)
     {
-        // WebClient 没有超时参数；用 DownloadData + 超时控制太绕，
-        // 这里直接同步下载，卡住的情况由外层逐个源重试兜住
+        // WebClient 没有超时参数，这里同步下载；超时由外层逐源重试处理。
         return wc.DownloadData(url);
     }
 

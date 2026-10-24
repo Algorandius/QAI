@@ -168,8 +168,7 @@ def _on_closing(*_args) -> bool:
 def _notify_shutdown() -> None:
     """关窗时的行为：默认停掉一切；设了 background 就只关界面。"""
     if _close_behavior() == "background":
-        # 后台模式：不调 shutdown/stop，启动器和机器人继续运行，
-        # 下次双击 QAI 会检测到启动器已在跑，直接重开窗口。
+        # 后台模式：不停止进程，下次双击 QAI 直接重开窗口。
         return
     ok = False
     base = _base_url()

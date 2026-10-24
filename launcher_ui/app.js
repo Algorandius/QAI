@@ -555,26 +555,34 @@ async function checkNapcatInstall() {
 
 async function detectNapcat() {
   const btn = $("#setupDetect");
+  const out = $("#setupDetectResult");
   try {
     await withBusy(btn, async () => {
+      out.textContent = "正在查找 NapCat…（会扫一遍下载、桌面、各盘根目录，最多几秒）";
       const d = await api("/api/setup/detect");
       const list = d.napcat || [];
-      const valid = list.find((x) => x.launcher) || list[0];
-      if (valid) $("#setupNapdir").value = valid.path;
-      const lines = [];
-      if (list.length) {
-        for (const x of list) {
-          lines.push(`${x.launcher ? "✓" : "×"} ${x.path}${x.launcher ? "" : "（缺 launcher-win10.bat）"}`);
-        }
-      } else {
-        lines.push("没有在常见目录找到 NapCat；请手动填写安装目录。");
+      const usable = list.filter((x) => x.launcher);
+      if (usable.length) {
+        // 有能直接启动的，直接填进去；多个时优先取第一个（路径最短的）
+        $("#setupNapdir").value = usable[0].path;
+        const extra = usable.length > 1 ? `（共找到 ${usable.length} 个，已填第一个）` : "";
+        out.textContent = `✓ 已找到并填入：${usable[0].path}${extra}。点「保存」生效。`;
+        return;
       }
-      if (d.qq && d.qq.length) lines.push(`QQ：${d.qq.join(" / ")}`);
-      else lines.push("QQ：没在常见目录找到，请确认 QQNT 已安装。");
-      $("#setupDetectResult").textContent = lines.join("  ·  ");
+      if (list.length) {
+        // 有 NapCat 主体但缺 launcher-win10.bat：典型是解压层级不对
+        $("#setupNapdir").value = list[0].path;
+        out.textContent =
+          `找到了 ${list[0].path}，但里面没有 launcher-win10.bat（可能是解压多套了一层）。` +
+          "请把压缩包解压后，选到「包含 launcher-win10.bat」的那一层；或点「安装到 QAI 目录」让 QAI 自己装。";
+        return;
+      }
+      out.textContent =
+        "没有在常见位置找到 NapCat。可以：①点「安装到 QAI 目录」让 QAI 自动下载；" +
+        "②把 NapCat 解压到 QAI 目录下再点一次「自动检测」；③手动选到包含 launcher-win10.bat 的那一层。";
     });
   } catch (e) {
-    toast("自动检测失败：" + e.message, "error");
+    out.textContent = "自动检测失败：" + e.message;
   }
 }
 
@@ -607,6 +615,11 @@ async function saveSetup() {
     await withBusy($("#setupSave"), async () => {
       const r = await api("/api/setup/save", "POST", body);
       toast(r.message || "配置已保存");
+      // 后端会把「填错但能救回来」的路径解析成真正的 NapCat 目录，回填让用户看见
+      if (r.napcat_dir && r.napcat_dir !== body.napcat_dir) {
+        $("#setupNapdir").value = r.napcat_dir;
+        toast(`NapCat 目录已自动修正为：${r.napcat_dir}`);
+      }
       if (r.warning) {
         $("#setupSaveHint").textContent = r.warning;
         toast(r.warning);

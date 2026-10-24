@@ -29,8 +29,7 @@ from src.model_catalog import base_for, key_envs_for
 PERSONA_DIR = ROOT / "personas"
 STATE_FILE = ROOT / "data" / "current_persona.json"
 SCENE_FILE = ROOT / "data" / "scene_persona.json"      # 群/私聊 绑定的独立人设
-# 公开版本只附带原创示例人设 personas/example，这一项是它丢失时的兜底。
-# 用户自己的角色放 personas/ 下其它目录即可，不需要改这里。
+# 公开版本只附带 personas/example，这一项是它丢失时的兜底。
 DEFAULT_ID = "example"
 
 # 人设配置键 -> ai_chat 模块里的变量名（多数同名，只有 MAX_CHARS 不一样）

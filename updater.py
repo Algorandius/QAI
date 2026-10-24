@@ -292,9 +292,8 @@ def main() -> int:
         except Exception:
             pass
 
-    # 不管成功还是失败，都要把 QAI 拉起来。
-    # 启动器此时已经退出；如果这里不重启，用户看到的就是「QAI 自己消失了」，
-    # 失败时更糟——他已经没法从界面上看到我写进 result 的错误。
+    # 启动器已退出，成功或失败都要重新拉起；否则 QAI 会直接消失，
+    # 用户也看不到写进 result 的错误。
     if not args.no_restart and not args.dry_run:
         try:
             restart_app(root)
