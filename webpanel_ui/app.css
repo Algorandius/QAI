@@ -549,7 +549,33 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
 .modal-head { display: flex; justify-content: space-between; gap: 12px; padding: 17px 19px; border-bottom: 1px solid var(--line-soft); flex: 0 0 auto; }
 .modal-head h2 { margin: 0; font-size: 16px; }
 .modal-head p { margin: 4px 0 0; font-size: 12px; }
-.modal-body { padding: 17px 19px; overflow: auto; display: flex; flex-direction: column; gap: 13px; min-height: 0; }
+/* ---- 人设弹窗：角色模型（自建下拉，用 details 实现） ---- */
+.model-picker { display: block; }
+.model-picker-summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
+  padding: 8px 10px; font-size: 12.5px; color: var(--text); line-height: 1.5;
+}
+.model-picker-summary::-webkit-details-marker { display: none; }
+.model-picker-summary::after { content: "▾"; color: var(--muted); font-size: 10px; flex: 0 0 auto; }
+.model-picker[open] .model-picker-summary { border-color: var(--accent); }
+.model-picker-menu {
+  margin-top: 6px; max-height: 240px; overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+  padding: 4px; display: flex; flex-direction: column; gap: 2px;
+}
+.model-opt {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  width: 100%; text-align: left; background: transparent; border: 0; border-radius: 7px;
+  padding: 7px 9px; font-size: 12.5px; color: var(--text-2); cursor: pointer; font-family: inherit;
+}
+.model-opt:hover { background: rgba(77, 163, 255, .12); color: var(--text); }
+.model-opt.selected { background: rgba(77, 163, 255, .18); color: #9dc7ff; }
+.model-opt em { font-style: normal; font-size: 10.5px; color: var(--muted); }
+.model-opt-group { padding: 6px 8px 2px; font-size: 10.5px; color: var(--muted); }
+
+.modal-body { padding: 17px 19px; overflow: auto; display: flex; flex-direction: column; gap: 13px; min-height: 0; overscroll-behavior: contain; }
 .modal-foot { padding: 13px 19px; border-top: 1px solid var(--line-soft); display: flex; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-2); }
 .field > span { color: var(--muted); font-size: 11.5px; }
@@ -572,8 +598,7 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
 .persona-config-field select { padding: 6px 8px; font-size: 11.5px; }
 .persona-model-field { grid-column: 1 / -1; }
 .persona-model-field select { width: 100%; }
-.persona-model-field .hint { font-size: 9.5px; line-height: 1.4; }
-.file-drop {
+.persona-model-field .hint { font-size: 9.5px; line-height: 1.4; }.file-drop {
   border: 1px dashed #37415a; border-radius: 12px; padding: 15px;
   display: flex; flex-direction: column; gap: 4px; cursor: pointer;
   background: rgba(12, 15, 23, .45); transition: border-color .15s ease, background .15s ease;

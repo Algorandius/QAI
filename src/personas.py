@@ -2,10 +2,10 @@
 
 目录结构：
     personas/
-      huiliyi/
+      example/            随包附带的原创示例人设
         persona.txt     人设正文
-        config.json     {"name": "上杉绘梨衣", "desc": "...", "config": {参数: 值}}
-      dayuyu/
+        config.json     {"name": "小满", "desc": "...", "config": {参数: 值}}
+      自建角色/             用户自己加的角色，同样是这两个文件
         persona.txt
         config.json
 
@@ -24,12 +24,14 @@ from typing import Any
 from nonebot import logger
 
 from src.config import ROOT, env
-from src.model_catalog import PROVIDER_KEY_ENV, base_for
+from src.model_catalog import base_for, key_envs_for
 
 PERSONA_DIR = ROOT / "personas"
 STATE_FILE = ROOT / "data" / "current_persona.json"
 SCENE_FILE = ROOT / "data" / "scene_persona.json"      # 群/私聊 绑定的独立人设
-DEFAULT_ID = "huiliyi"
+# 公开版本只附带原创示例人设 personas/example，这一项是它丢失时的兜底。
+# 用户自己的角色放 personas/ 下其它目录即可，不需要改这里。
+DEFAULT_ID = "example"
 
 # 人设配置键 -> ai_chat 模块里的变量名（多数同名，只有 MAX_CHARS 不一样）
 VAR_MAP: dict[str, str] = {
@@ -298,15 +300,18 @@ def model_for(key: Any = None) -> dict[str, str]:
         elif "tencent" in probe:
             provider = "hunyuan"
 
-    api_key = str(env(PROVIDER_KEY_ENV.get(provider, ""), "") or "").strip()
+    # 厂商别名（混元 == tencent / tencent_intl）统一由 model_catalog 处理
+    api_key = ""
+    for key_name in key_envs_for(provider):
+        api_key = str(env(key_name, "") or "").strip()
+        if api_key:
+            break
     same_global = (
         provider == global_provider
         or (not global_provider and (provider in (global_base + " " + global_model).lower() or base == global_base))
     )
     if not api_key and same_global:
         api_key = str(env("LLM_API_KEY", "") or "").strip()
-    if not api_key and provider == "hunyuan":
-        api_key = str(env("LLM_KEY_TENCENT", "") or env("LLM_KEY_TENCENT_INTL", "") or "").strip()
 
     return {
         "provider": provider,

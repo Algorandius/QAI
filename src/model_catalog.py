@@ -63,6 +63,34 @@ PROVIDER_KEY_ENV = {
     "tencent_intl": "LLM_KEY_TENCENT_INTL",
 }
 
+# 一个厂商可能对应多个历史键名（混元早期写成 tencent / tencent_intl）。
+# 按优先级排列，读的时候取第一个非空的。
+PROVIDER_KEY_ALIASES: dict[str, tuple[str, ...]] = {
+    "zhipu": ("LLM_KEY_ZHIPU",),
+    "deepseek": ("LLM_KEY_DEEPSEEK",),
+    "qwen": ("LLM_KEY_QWEN",),
+    "kimi": ("LLM_KEY_KIMI",),
+    "hunyuan": ("LLM_KEY_HUNYUAN", "LLM_KEY_TENCENT", "LLM_KEY_TENCENT_INTL"),
+    "tencent": ("LLM_KEY_HUNYUAN", "LLM_KEY_TENCENT", "LLM_KEY_TENCENT_INTL"),
+    "tencent_intl": ("LLM_KEY_HUNYUAN", "LLM_KEY_TENCENT_INTL", "LLM_KEY_TENCENT"),
+}
+
+
+def key_envs_for(provider_id: str) -> tuple[str, ...]:
+    """该厂商可能存放 Key 的 .env 键名，按优先级排列。
+
+    厂商别名（tencent → 混元）也在这里处理，调用方不要再自己判断。
+    """
+    return PROVIDER_KEY_ALIASES.get(str(provider_id or "").strip().lower(), ())
+
+
+def key_env_for(provider_id: str) -> str:
+    """该厂商**写入** Key 时用的键名（永远写主键，避免别名分叉）。"""
+    pid = str(provider_id or "").strip().lower()
+    if pid in ("tencent", "tencent_intl"):
+        pid = "hunyuan"
+    return PROVIDER_KEY_ENV.get(pid, "")
+
 
 def provider(provider_id: str) -> dict[str, Any] | None:
     return next((p for p in PROVIDERS if p["id"] == provider_id), None)

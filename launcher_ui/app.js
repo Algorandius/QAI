@@ -3,7 +3,16 @@
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-const S = { status: null, busy: false, logOpen: false, offline: false, view: "panel", tokenInfo: null, tokenRevealed: false, setup: null, providerKeys: {} };
+// 写接口令牌：由服务端注入到 <meta name="qai-token">，只有同源脚本读得到。
+// 任何跨站页面都拿不到它，也就无法调用 POST 接口。
+const API_TOKEN = (document.querySelector('meta[name="qai-token"]') || {}).content || "";
+
+function authHeaders(extra) {
+  const headers = Object.assign({}, extra || {});
+  if (API_TOKEN) headers["X-QAI-Token"] = API_TOKEN;
+  return headers;
+}
+const S = { status: null, busy: false, logOpen: false, offline: false, view: "panel", tokenInfo: null, tokenRevealed: false, setup: null, providerKeys: {}, update: null, lastFailureAt: null };
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) => ({
@@ -56,9 +65,9 @@ function qaiConfirm(message, options = {}) {
 }
 
 async function api(path, method = "GET", body = undefined) {
-  const opts = { method, cache: "no-store" };
+  const opts = { method, cache: "no-store", headers: authHeaders() };
   if (body !== undefined) {
-    opts.headers = { "Content-Type": "application/json" };
+    opts.headers = authHeaders({ "Content-Type": "application/json" });
     opts.body = JSON.stringify(body);
   }
   const r = await fetch(path, opts);
@@ -116,6 +125,16 @@ function applyStatus(st) {
     ? (st.napcat_url || "")
     : (window.QAITheme ? QAITheme.withTheme(st.panel_url) : (st.panel_url || ""));
   if (st.log) $("#logMeta").textContent = `launcher-bot.log · ${st.time || ""}`;
+
+  // 看门狗放弃自动重启：只在第一次看到时弹一次，避免每次轮询都刷屏
+  const fail = st.bot_last_failure || null;
+  if (fail && fail.at && S.lastFailureAt !== fail.at) {
+    S.lastFailureAt = fail.at;
+    const detail = fail.log ? `\n\n最后几行日志：\n${fail.log}` : "";
+    toast(`机器人反复启动失败（退出码 ${fail.code ?? "未知"}），已停止自动重启。${fail.reason || ""}${detail}`, "error");
+    toggleLog(true);
+  }
+  if (!fail) S.lastFailureAt = null;
 
   renderStage();
 }
@@ -216,6 +235,11 @@ async function action(btn, path) {
   try {
     const r = await api(path, "POST");
     toast(r.message || (r.ok ? "操作完成" : "操作失败"), r.ok ? "ok" : "error");
+    // 启动失败时把机器人日志直接摆出来，用户不用自己去翻文件
+    if (!r.ok && r.log) toggleLog(true);
+    if (!r.ok && r.error && String(r.error).includes("最后几行日志")) {
+      $("#logText").textContent = r.error;
+    }
     await poll();
   } catch (e) {
     toast(e.message, "error");
@@ -417,14 +441,15 @@ async function openSetup() {
     $("#setupNapdir").value = st.napcat_dir || "";
     $("#setupAdmin").value = st.admin_qq || "";
     $("#setupGroups").value = st.allowed_groups || "";
+    $("#setupCloseBehavior").value = ["background", "exit"].includes(st.close_behavior) ? st.close_behavior : "ask";
     $("#setupDetectResult").textContent = st.napcat_ok
       ? `已检测到 NapCat：${st.napcat_dir}`
       : `还没检测到有效的 NapCat。可点「安装到 QAI 目录」（默认 ${st.napcat_default_dir || "QAI\\napcat"}）或手动选择。`;
     $("#setupSaveHint").textContent = st.llm_key_set
-      ? "API Key 已配置；留空会保持不变。保存后如果机器人正在运行，会重启一次使配置生效。"
-      : "保存后会写入 `.env`，并自动启动机器人。";
+      ? "API Key 已配置；留空会保持不变。NapCat 目录可以之后再填。"
+      : "模型 Key 必填。NapCat 还没装也可以先保存，只是机器人暂时不会启动。";
     $("#setupNapcatBar").style.width = "0%";
-    $("#setupNapcatState").textContent = "从 GitHub 下载最新 Windows Node 包，约 120MB；如果 QAI 一直显示「等待连接」，可点「一键连接」自动写入反向 WebSocket 配置。";
+    $("#setupNapcatState").textContent = "从 GitHub 下载最新 Windows Node 包，约 120MB。点「一键连接」前先手动关掉 NapCat 的命令行窗口，否则配置会被覆盖。";
     $("#setupModal").classList.remove("hidden");
     if (!st.napcat_ok) detectNapcat();
     checkNapcatInstall();
@@ -464,8 +489,11 @@ async function openNapcatPan() {
 }
 
 async function quickConnectOnebot() {  if (!await qaiConfirm(
-    "会自动检查 NapCat 的 OneBot 配置，并写入 QAI 的反向 WebSocket 地址和 Token。\n不会修改 QQ 登录，也不会重新扫码。",
-    { title: "一键连接 OneBot", okText: "开始检查" },
+    "会自动检查 NapCat 的 OneBot 配置，并写入 QAI 的反向 WebSocket 地址和 Token。\n\n"
+    + "⚠️ 请先手动关闭 NapCat 的命令行窗口（黑窗口），等 QQ 完全退出，再点「开始检查」。\n"
+    + "命令行窗口还开着时，NapCat 退出会把刚写好的配置覆盖回去，这一步没做就会一直连不上。\n\n"
+    + "完成后 QAI 会重新拉起 NapCat，可能需要重新扫码登录。",
+    { title: "一键连接 OneBot", okText: "已关闭，开始检查" },
   )) return;
   const btn = $("#setupNapcatQuick");
   btn.disabled = true;
@@ -579,12 +607,254 @@ async function saveSetup() {
     await withBusy($("#setupSave"), async () => {
       const r = await api("/api/setup/save", "POST", body);
       toast(r.message || "配置已保存");
+      if (r.warning) {
+        $("#setupSaveHint").textContent = r.warning;
+        toast(r.warning);
+      }
     });
     closeSetup();
     await poll();
   } catch (e) {
     toast(e.message, "error");
     $("#setupSaveHint").textContent = "保存失败：" + e.message;
+  }
+}
+
+/* ---------- 版本握手：识别「旧启动器进程 + 新界面文件」 ---------- */
+// 与 launcher.py 的 API_LEVEL 对应。新增接口时两边一起加。
+const MIN_API = 2;
+
+function showStaleBanner(detail) {
+  const el = $("#staleBanner");
+  if (!el) return;
+  const text = $("#staleBannerText");
+  if (text) {
+    text.textContent = detail
+      ? `控制台已更新，但正在运行的启动器还是旧版（接口层级 ${detail}），部分按钮会点了没反应。请双击项目目录里的「停止QAI.bat」，再重新打开 QAI。`
+      : "控制台已更新，但正在运行的启动器还是旧版（没有版本接口），部分按钮会点了没反应。请双击项目目录里的「停止QAI.bat」，再重新打开 QAI。";
+  }
+  el.classList.remove("hidden");
+}
+
+async function checkApiVersion() {
+  try {
+    const v = await api("/api/version");
+    const level = Number(v && v.api);
+    if (!Number.isFinite(level) || level < MIN_API) showStaleBanner(level);
+  } catch (e) {
+    // 旧启动器没有 /api/version，正好就是要提醒的情况
+    showStaleBanner(null);
+  }
+}
+
+/* ---------- 在线更新 ---------- */
+function renderUpdate(info) {
+  S.update = info;
+  $("#updateSub").textContent = `当前版本 ${info.current || "?"}` + (info.latest ? ` · 最新 ${info.latest}` : "");
+  const state = $("#updateState");
+  const notes = $("#updateNotes");
+  const apply = $("#updateApply");
+
+  if (!info.ok) {
+    // 多行提示（含离线建议），textContent 会把换行吃掉，这里按行拼
+    state.innerHTML = esc(info.error || "检查更新失败").replace(/\n/g, "<br>");
+    notes.classList.add("hidden");
+    apply.disabled = true;
+    return;
+  }
+  if (info.has_update) {
+    const size = info.asset_size ? `，${(info.asset_size / 1024 / 1024).toFixed(1)} MB` : "";
+    state.innerHTML = `发现新版本 <b>${esc(info.latest)}</b>（当前 ${esc(info.current)}）${esc(size)}`
+      + (info.asset_is_update_pack ? "，只更新程序文件" : "，会从完整包里只取程序文件");
+    notes.textContent = info.notes || "（这个版本没有写更新说明）";
+    notes.classList.remove("hidden");
+    apply.disabled = false;
+  } else {
+    state.textContent = `已是最新版本（${info.current}）。`;
+    notes.classList.add("hidden");
+    apply.disabled = true;
+  }
+}
+
+async function checkUpdate(manual) {
+  try {
+    renderUpdate(await api("/api/update/check"));
+  } catch (e) {
+    renderUpdate({ ok: false, current: "", error: "检查更新失败：" + e.message });
+    if (manual) toast("检查更新失败：" + e.message, "error");
+    return;
+  }
+  const info = S.update;
+  const btn = $("#updateBtn");
+  if (btn) {
+    if (info && info.ok && info.has_update) {
+      btn.textContent = `更新 ${info.latest}`;
+      btn.classList.add("has-update");
+    } else if (info && info.current) {
+      btn.textContent = `v${info.current}`;
+      btn.classList.remove("has-update");
+    }
+  }
+  if (manual && !$("#updateModal").classList.contains("hidden")) return;
+}
+
+async function openUpdate() {
+  $("#updateModal").classList.remove("hidden");
+  $("#updateState").textContent = "正在检查…";
+  $("#updateNotes").classList.add("hidden");
+  $("#updateApply").disabled = true;
+  await checkUpdate(true);
+}
+
+function closeUpdate() {
+  $("#updateModal").classList.add("hidden");
+}
+
+async function applyUpdate() {
+  const info = S.update || {};
+  const ok = await qaiConfirm(
+    `要更新到 ${info.latest || "新版本"} 吗？\n\n`
+    + "只替换程序文件，聊天记录 / 记忆 / 人设 / .env 都会保留。\n"
+    + "更新期间 QAI 会关闭并自动重开，别手动去开，等它自己起来即可。",
+    { title: "立即更新", okText: "更新并重启" },
+  );
+  if (!ok) return;
+  try {
+    await withBusy($("#updateApply"), async () => {
+      const r = await api("/api/update/apply", "POST", {});
+      toast(r.message || "正在更新");
+      $("#updateState").textContent = r.message || "正在更新，QAI 即将关闭…";
+    });
+  } catch (e) {
+    toast("更新失败：" + e.message, "error");
+    $("#updateState").textContent = "更新失败：" + e.message;
+  }
+}
+
+async function updateFromLocalFile(btn) {
+  const input = $("#updateLocalFile");
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  const ok = await qaiConfirm(
+    `用「${file.name}」更新吗？\n\n`
+    + "只会替换程序文件，聊天记录 / 记忆 / 人设 / .env 里的 Key 都会保留。\n"
+    + "更新期间 QAI 会关闭并自动重开，等它自己起来即可。",
+    { title: "从本地文件更新", okText: "更新并重启" },
+  );
+  if (!ok) {
+    input.value = "";
+    return;
+  }
+  try {
+    await withBusy(btn, async () => {
+      const r = await fetch("/api/update/from-file", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/zip" }),
+        body: file,
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data || data.ok === false) {
+        throw new Error((data && data.error) || `HTTP ${r.status}`);
+      }
+      toast(data.message || "正在更新");
+      $("#updateState").textContent = data.message || "正在更新，QAI 即将关闭…";
+    });
+  } catch (e) {
+    toast("更新失败：" + e.message, "error");
+    $("#updateState").textContent = "本地更新失败：" + e.message;
+  }
+  input.value = "";
+}
+
+/* ---------- 数据备份 ---------- */
+async function exportData(btn) {
+  try {
+    await withBusy(btn, async () => {
+      const r = await fetch("/api/data/export", { cache: "no-store", headers: authHeaders() });
+      if (!r.ok) {
+        let msg = `HTTP ${r.status}`;
+        try { msg = (JSON.parse(await r.text()) || {}).error || msg; } catch (e) {}
+        throw new Error(msg);
+      }
+      const blob = await r.blob();
+      const match = (r.headers.get("Content-Disposition") || "").match(/filename="?([^";]+)"?/);
+      const name = match ? match[1] : "QAI-backup.zip";
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      $("#dataState").textContent = `已导出 ${name}（${(blob.size / 1024 / 1024).toFixed(2)} MB）。`;
+      toast("数据已导出");
+    });
+  } catch (e) {
+    toast("导出失败：" + e.message, "error");
+  }
+}
+
+async function importData(btn) {
+  const input = $("#dataImportFile");
+  const file = input && input.files && input.files[0];
+  if (!file) return;
+  const ok = await qaiConfirm(
+    `会用「${file.name}」覆盖当前 data/ 目录（聊天记录、长期记忆、好感度、人设绑定）。\n\n`
+    + "当前数据会先备份成 data.bak-时间戳；导入前请先停止机器人，否则内存里的记忆会盖回去。",
+    { title: "导入数据", okText: "覆盖导入", danger: true },
+  );
+  if (!ok) {
+    input.value = "";
+    return;
+  }
+  try {
+    await withBusy(btn, async () => {
+      const r = await fetch("/api/data/import", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/zip" }),
+        body: file,
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data || data.ok === false) {
+        throw new Error((data && data.error) || `HTTP ${r.status}`);
+      }
+      $("#dataState").textContent = (data.message || "导入完成") + " 重新启动机器人后生效。";
+      toast(data.message || "导入完成");
+    });
+  } catch (e) {
+    toast("导入失败：" + e.message, "error");
+  }
+  input.value = "";
+}
+
+/* ---------- 关窗口询问：后台运行 还是 退出 ---------- */
+function askClose() {
+  const modal = $("#closeModal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+}
+// qai_window.py 会调这个：它拦下了关闭动作，让页面问用户
+window.__qaiAskClose = askClose;
+
+async function decideClose(mode, btn) {
+  const remember = !!$("#closeRemember")?.checked;
+  try {
+    await withBusy(btn, () => api("/api/close/decision", "POST", { mode, remember }));
+  } catch (e) {
+    toast("操作失败：" + e.message, "error");
+    return;
+  }
+  $("#closeModal")?.classList.add("hidden");
+  if (mode === "background") toast("已转入后台运行，双击 QAI 可重新打开界面");
+}
+
+/* ---------- 用系统浏览器打开链接（教程里的网址） ---------- */
+async function openExternal(url) {
+  try {
+    await api("/api/open-url", "POST", { url });
+  } catch (e) {
+    toast("打不开浏览器，请手动复制链接：" + url, "error");
   }
 }
 
@@ -598,10 +868,145 @@ async function checkSetup() {
   }
 }
 
+/* ---------- 各厂商 Key：角色单独选厂商时用，不动默认模型 ---------- */
+async function openKeys(focusProvider) {
+  const modal = $("#keysModal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  await refreshKeys(focusProvider || "");
+}
+
+function closeKeys() {
+  $("#keysModal")?.classList.add("hidden");
+}
+
+async function refreshKeys(focusProvider) {
+  const list = $("#keysList");
+  if (!list) return;
+  list.innerHTML = '<div class="empty-state">正在读取…</div>';
+  try {
+    renderKeys(await api("/api/provider-keys"), focusProvider || "");
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state">读取失败：${esc(e.message)}</div>`;
+  }
+}
+
+function renderKeys(st, focusProvider) {
+  const list = $("#keysList");
+  if (!list) return;
+  const items = (st && st.items) || [];
+  if (!items.length) {
+    list.innerHTML = '<div class="empty-state">没有可配置的厂商</div>';
+    return;
+  }
+  list.innerHTML = items.map((item) => {
+    const meta = MODEL_PROVIDERS.find((p) => p.id === item.id) || { name: item.id };
+    const badge = item.set
+      ? '<b class="key-badge on">已配置</b>'
+      : '<b class="key-badge">未配置</b>';
+    const masked = item.set && item.masked ? `<span class="muted">${esc(item.masked)}</span>` : "";
+    const current = item.is_current ? '<span class="key-current">· 当前默认模型</span>' : "";
+    const placeholder = item.set ? "已配置，输入新 Key 可覆盖" : "填入这个厂商的 API Key";
+    const clearBtn = item.set
+      ? `<button class="btn btn-ghost btn-sm" data-key-clear="${esc(item.id)}" type="button">清除</button>`
+      : "";
+    const testBtn = item.set
+      ? `<button class="btn btn-ghost btn-sm" data-key-test="${esc(item.id)}" type="button">测试</button>`
+      : "";
+    return `<div class="key-row${item.id === focusProvider ? " focus" : ""}" data-key-row="${esc(item.id)}">
+      <div class="key-head">
+        <div><b>${esc(meta.name)}</b> ${current}</div>
+        <div>${badge} ${masked}</div>
+      </div>
+      <div class="key-input">
+        <input type="password" data-key-input="${esc(item.id)}" placeholder="${esc(placeholder)}" autocomplete="off">
+        <button class="btn btn-primary btn-sm" data-key-save="${esc(item.id)}" type="button">保存</button>
+        ${testBtn}
+        ${clearBtn}
+      </div>
+      <div class="hint" data-key-result="${esc(item.id)}">写入 ${esc(item.env)}</div>
+    </div>`;
+  }).join("");
+
+  list.querySelectorAll("[data-key-save]").forEach((btn) =>
+    btn.addEventListener("click", () => saveKey(btn.dataset.keySave, btn)));
+  list.querySelectorAll("[data-key-clear]").forEach((btn) =>
+    btn.addEventListener("click", () => clearKey(btn.dataset.keyClear, btn)));
+  list.querySelectorAll("[data-key-test]").forEach((btn) =>
+    btn.addEventListener("click", () => testKey(btn.dataset.keyTest, btn)));
+  list.querySelectorAll("[data-key-input]").forEach((input) => {
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const btn = list.querySelector(`[data-key-save="${input.dataset.keyInput}"]`);
+      if (btn) btn.click();
+    });
+  });
+
+  if (focusProvider) {
+    const target = list.querySelector(`[data-key-input="${focusProvider}"]`);
+    if (target) setTimeout(() => target.focus(), 60);
+  }
+}
+
+async function saveKey(provider, btn) {
+  const input = $(`[data-key-input="${provider}"]`);
+  const key = input ? input.value.trim() : "";
+  if (!key) {
+    toast("请先填入这个厂商的 API Key", "error");
+    return;
+  }
+  try {
+    const r = await withBusy(btn, () => api("/api/provider-keys", "POST", { provider, key }));
+    toast(r.message || "已保存");
+    renderKeys(r, provider);
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+async function clearKey(provider, btn) {
+  const meta = MODEL_PROVIDERS.find((p) => p.id === provider);
+  const ok = await qaiConfirm(`清除「${meta ? meta.name : provider}」的 API Key？`, {
+    title: "清除 Key", okText: "清除", danger: true,
+  });
+  if (!ok) return;
+  try {
+    const r = await withBusy(btn, () => api("/api/provider-keys", "POST", { provider, clear: true }));
+    toast(r.message || "已清除");
+    renderKeys(r, provider);
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+async function testKey(provider, btn) {
+  const out = $(`[data-key-result="${provider}"]`);
+  if (out) out.textContent = "正在向厂商发一次最小请求…";
+  try {
+    const r = await withBusy(btn, () => api("/api/provider-keys/test", "POST", { provider }));
+    if (out) out.textContent = r.message || "可用";
+    toast(r.message || "Key 可用");
+  } catch (e) {
+    if (out) out.textContent = "测试失败：" + e.message;
+    toast("测试失败：" + e.message, "error");
+  }
+}
+
 function renderTutorialMarkdown(md) {
-  const inline = (s) => esc(s)
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>");
+  // 教程里的网址要能点：markdown 链接 [文字](地址) 和裸露的网址都转成
+  // data-href 链接，点击时交给系统浏览器打开（WebView 里直接跳会丢窗口）。
+  const link = (text, url) =>
+    `<a href="#" data-href="${esc(url)}" class="doc-link">${esc(text)}</a>`;
+  const inline = (s) => {
+    let html = esc(s);
+    html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_m, t, u) => link(t, u));
+    html = html.replace(/(^|[\s(（])(https?:\/\/[^\s<)）]+)/g,
+      (_m, pre, u) => `${pre}${link(u, u)}`);
+    html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    return html;
+  };
   const lines = String(md || "").replace(/\r\n/g, "\n").split("\n");
   const out = [];
   let list = "";
@@ -820,6 +1225,49 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#closeTutorial").addEventListener("click", closeTutorial);
   $("#setupDetect").addEventListener("click", detectNapcat);
   $("#setupSave").addEventListener("click", saveSetup);
+  $("#setupKeysOpen")?.addEventListener("click", () => openKeys(""));
+  $("#setupCloseBehavior")?.addEventListener("change", async () => {
+    const mode = $("#setupCloseBehavior").value;
+    try {
+      const r = await api("/api/settings/close-behavior", "POST", { mode });
+      toast(r.message || "已保存");
+    } catch (e) {
+      toast("保存失败：" + e.message, "error");
+    }
+  });
+  $("#closeKeys")?.addEventListener("click", closeKeys);
+  $("#keysDone")?.addEventListener("click", closeKeys);
+  $("#keysModal")?.addEventListener("click", (e) => {
+    if (e.target === $("#keysModal")) closeKeys();
+  });
+  $("#staleBannerClose")?.addEventListener("click", () => $("#staleBanner")?.classList.add("hidden"));
+  $("#dataExport")?.addEventListener("click", () => exportData($("#dataExport")));
+  $("#dataImport")?.addEventListener("click", () => $("#dataImportFile")?.click());
+  $("#dataImportFile")?.addEventListener("change", () => importData($("#dataImport")));
+  $("#updateBtn")?.addEventListener("click", openUpdate);
+  $("#closeUpdate")?.addEventListener("click", closeUpdate);
+  $("#updateModal")?.addEventListener("click", (e) => {
+    if (e.target === $("#updateModal")) closeUpdate();
+  });
+  $("#updateApply")?.addEventListener("click", applyUpdate);
+  $("#closeBackground")?.addEventListener("click", () => decideClose("background", $("#closeBackground")));
+  $("#closeExit")?.addEventListener("click", () => decideClose("exit", $("#closeExit")));
+  // 教程里的网址一律交给系统浏览器，不在 WebView 里跳走
+  $("#tutorialBody")?.addEventListener("click", (e) => {
+    const a = e.target.closest("a[data-href]");
+    if (!a) return;
+    e.preventDefault();
+    openExternal(a.dataset.href);
+  });
+  $("#updateLocal")?.addEventListener("click", () => $("#updateLocalFile")?.click());
+  $("#updateLocalFile")?.addEventListener("change", () => updateFromLocalFile($("#updateLocal")));
+  $("#updatePage")?.addEventListener("click", () => {
+    const url = (S.update && S.update.page) || "https://github.com/Algorandius/QAI/releases/latest";
+    window.open(url, "_blank");
+  });
+  checkApiVersion();
+  // 启动时静默检查一次：有新版本就把按钮点亮，不打扰用户
+  setTimeout(() => { checkUpdate(false); }, 2500);
   $("#setupProvider").addEventListener("change", () => refreshModelUi(null, true));
   $("#setupModel").addEventListener("change", () => {
     const custom = $("#setupModel").value === "__custom__";
@@ -842,12 +1290,27 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key !== "Escape") return;
     if (!$("#tutorialModal").classList.contains("hidden")) closeTutorial();
     if (!$("#tokenModal").classList.contains("hidden")) closeToken();
+    if ($("#keysModal") && !$("#keysModal").classList.contains("hidden")) closeKeys();
+    if ($("#updateModal") && !$("#updateModal").classList.contains("hidden")) closeUpdate();
     if (!$("#setupModal").classList.contains("hidden")) closeSetup();
   });
   $("#logBtn").addEventListener("click", () => toggleLog());
   $("#closeLog").addEventListener("click", () => toggleLog(false));
 
   setView(location.hash === "#napcat" ? "napcat" : "panel");
+  // 管理台（8081）里点「去配置」时，跨端口用 postMessage 让外壳打开 Key 面板
+  window.addEventListener("message", (e) => {
+    let host = "";
+    try { host = new URL(e.origin).hostname; } catch (err) { return; }
+    if (host !== "127.0.0.1" && host !== "localhost") return;
+    const data = e.data;
+    if (!data || typeof data !== "object" || data.type !== "qai:open-keys") return;
+    openKeys(String(data.provider || ""));
+  });
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.get("view") === "keys") openKeys(params.get("provider") || "");
+  } catch (e) {}
   poll();
   let tutorialDone = "1";
   try { tutorialDone = localStorage.getItem("qai-tutorial-done") || ""; } catch (e) {}

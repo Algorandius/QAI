@@ -358,14 +358,6 @@
         </div>
         <p class="hint">开启后，长按卡片可拖动排序；鼠标移到卡片右下角可拖动缩放，松手保存为默认布局；同一网格的其他卡片会自动重排。</p>
       </div>
-      <div class="setting-group">
-        <div class="setting-title">新手向导</div>
-        <div class="switch-row">
-          <div><b>悬浮教程向导</b><span>彩色圆球置顶显示，可拖动、点击看教程、右键关闭</span></div>
-          <button class="btn btn-ghost btn-sm" id="wakeGuide" type="button">唤醒向导</button>
-        </div>
-        <p class="hint">唤醒后会出现在页面最上层；位置会自动记住，下次打开仍在原处。</p>
-      </div>
       <div class="modal-actions">
         <button class="btn btn-primary" id="appearanceDone" type="button">完成</button>
       </div>
@@ -386,35 +378,8 @@
   </div>
 </div>
 
-<div id="guideOrb" class="guide-orb hidden" role="button" tabindex="0" aria-label="打开新手教程，拖动可移动，右键可关闭" title="拖动移动 · 点击看教程 · 右键关闭">
-  <span class="guide-orb-halo" aria-hidden="true"></span>
-  <span class="guide-orb-mark" aria-hidden="true">?</span>
-</div>
-<div id="guideMenu" class="guide-menu hidden" role="dialog" aria-label="关闭新手向导">
-  <p>要关闭新手向导吗？</p>
-  <div class="guide-menu-actions">
-    <button class="btn btn-ghost btn-sm" id="guideNo" type="button">否</button>
-    <button class="btn btn-primary btn-sm" id="guideYes" type="button">是</button>
-  </div>
-</div>
-
-<div class="modal-backdrop hidden" id="guideTutorialModal">
-  <div class="modal guide-tutorial-modal" role="dialog" aria-modal="true" aria-labelledby="guideTutorialTitle">
-    <div class="modal-head">
-      <div>
-        <h2 id="guideTutorialTitle">新手教程</h2>
-        <p class="muted">不用离开当前页面，随时查操作步骤</p>
-      </div>
-      <button class="icon-btn" id="guideTutorialClose" type="button" aria-label="关闭">×</button>
-    </div>
-    <div class="modal-body guide-tutorial-body" id="guideTutorialBody">
-      <div class="empty-state">正在加载教程…</div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn btn-primary" id="guideTutorialDone" type="button">知道了</button>
-    </div>
-  </div>
-</div>
+<!-- 悬浮新手向导已统一由启动器外壳（launcher_ui）提供，这里不再重复一份，
+     否则改向导要改两处、两边行为会不一致。 -->
 
 <div id="toast" class="toast" aria-live="polite"></div>
 <script src="/theme.js"></script>

@@ -19,6 +19,11 @@
   <link rel="stylesheet" href="/theme.css">
 </head>
 <body class="qai-shell">
+<!-- 旧启动器进程 + 新界面文件 时的提示：新接口 404 会让按钮点了没反应 -->
+<div class="stale-banner hidden" id="staleBanner" role="alert">
+  <span id="staleBannerText">控制台已更新，但旧的启动器进程还在运行，部分按钮会点了没反应。请双击项目目录里的「停止QAI.bat」，再重新打开 QAI。</span>
+  <button class="btn btn-ghost btn-sm" id="staleBannerClose" type="button">知道了</button>
+</div>
 <div class="ambient" aria-hidden="true"></div>
 <header class="topbar">
   <div class="brand">
@@ -48,6 +53,7 @@
     <button class="btn btn-ghost" id="napcatBtn" type="button">启动 NapCat</button>
     <button class="btn btn-ghost" id="tokenBtn" type="button">Token</button>
     <button class="btn btn-ghost" id="logBtn" type="button">日志</button>
+    <button class="btn btn-ghost" id="updateBtn" type="button" title="检查更新">v1.1.1</button>
     <button class="icon-btn" id="appearanceBtn" type="button" title="主题与布局" aria-label="主题与布局">
       <svg class="rainbow-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
         <defs>
@@ -220,12 +226,12 @@
           <div><b>NapCat</b><span class="muted">默认安装到 QAI\napcat</span></div>
           <div class="install-actions">
             <button class="btn btn-ghost btn-sm" id="setupNapcatQuick" type="button">一键连接</button>
-            <button class="btn btn-ghost btn-sm" id="setupNapcatPan" type="button">夸克网盘</button>
-            <button class="btn btn-primary btn-sm" id="setupNapcatInstall" type="button">安装到 QAI 目录</button>
+            <button class="btn btn-primary btn-sm" id="setupNapcatPan" type="button">夸克网盘下载</button>
+            <button class="btn btn-ghost btn-sm" id="setupNapcatInstall" type="button">从 GitHub 安装</button>
           </div>
         </div>
         <div class="install-progress"><i id="setupNapcatBar"></i></div>
-        <div class="hint" id="setupNapcatState">从 GitHub 下载最新 Windows Node 包，约 120MB；如果 QAI 一直显示「等待连接」，可点「一键连接」自动写入反向 WebSocket 配置。</div>
+        <div class="hint" id="setupNapcatState">用「一键连接」前，先按顺序做三步：①NapCat 里扫码登录 → ②<b>手动关掉 NapCat 的命令行窗口</b> → ③回来点「一键连接」。窗口还开着时 NapCat 退出会把刚写好的配置覆盖回去，连接就会一直失败。</div>
         <div class="hint">国内用户建议点上方「夸克网盘」下载。下载后解压，再在下方选择包含 <code>launcher-win10.bat</code> 的目录。</div>
         <div class="hint">按钮打不开时，直接复制这个地址到浏览器：
           <a href="https://pan.quark.cn/s/3dc6f10f0ebd" target="_blank" rel="noreferrer">夸克网盘链接</a>
@@ -262,6 +268,12 @@
         <span>API Key</span>
         <input id="setupKey" type="password" placeholder="sk-...（已配置可留空保持不变）" autocomplete="off">
       </label>
+      <p class="hint">
+        这里只填「当前默认模型」的 Key。
+        想让不同角色用不同厂商，先点
+        <button class="btn btn-ghost btn-sm" id="setupKeysOpen" type="button">各厂商 Key</button>
+        把对应厂商的 Key 存好。
+      </p>
       <label class="field">
         <span>Base URL（OpenAI 兼容地址）</span>
         <input id="setupBase" placeholder="https://api.deepseek.com/v1" autocomplete="off">
@@ -285,12 +297,119 @@
           <input id="setupGroups" placeholder="多个用逗号分隔" autocomplete="off">
         </label>
       </div>
+      <div class="install-box">
+        <div class="install-head">
+          <div><b>数据备份</b><span class="muted">换电脑、重装前先导出</span></div>
+          <div class="install-actions">
+            <button class="btn btn-ghost btn-sm" id="dataExport" type="button">导出</button>
+            <button class="btn btn-ghost btn-sm" id="dataImport" type="button">导入</button>
+            <input type="file" id="dataImportFile" accept=".zip" hidden>
+          </div>
+        </div>
+        <div class="hint" id="dataState">导出会打包 data/ 里的聊天记录、长期记忆、好感度、人设绑定（不含 WebView 缓存）。导入会先备份当前数据；导入前请先停止机器人。</div>
+      </div>
+
+      <label class="field">
+        <span>关闭窗口时</span>
+        <select id="setupCloseBehavior">
+          <option value="ask">每次询问（默认）</option>
+          <option value="background">只关界面：机器人在后台继续运行</option>
+          <option value="exit">退出：停止机器人并关闭启动器</option>
+        </select>
+      </label>
+      <p class="hint">选「只关界面」后，机器人和启动器会留在后台；想再看到界面，再双击一次 QAI 即可（不会重复启动）。</p>
+
       <div class="modal-actions">
         <button class="btn btn-ghost" id="tutorialBtn" type="button">新手教程</button>
         <button class="btn btn-ghost" id="setupLater" type="button">稍后再说</button>
         <button class="btn btn-primary" id="setupSave" type="button">保存并启动</button>
       </div>
-      <p class="hint" id="setupSaveHint">保存后会写入 `.env`；如果机器人已在运行，会重启一次让配置生效。</p>
+      <p class="hint" id="setupSaveHint">模型 Key 是必填的。NapCat 目录可以之后再填——先存好 Key 也能保存，只是机器人暂时不会启动。</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="closeModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="closeTitle">
+    <div class="modal-head">
+      <div>
+        <h2 id="closeTitle">关闭 QAI</h2>
+        <p class="muted">想让机器人在关掉界面后继续挂着吗？</p>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="install-box">
+        <div class="install-head">
+          <div><b>后台继续运行</b><span class="muted">界面关掉，机器人和启动器留在后台</span></div>
+          <button class="btn btn-primary btn-sm" id="closeBackground" type="button">后台运行</button>
+        </div>
+        <div class="hint">选这个之后 QQ 机器人仍在线回消息；想再看到界面，再双击一次 QAI 即可（不会重复启动）。</div>
+      </div>
+      <div class="install-box">
+        <div class="install-head">
+          <div><b>完全退出</b><span class="muted">停止机器人并关闭启动器</span></div>
+          <button class="btn btn-ghost btn-sm" id="closeExit" type="button">退出</button>
+        </div>
+        <div class="hint">选这个之后 QQ 会下线，下次需要重新打开 QAI。</div>
+      </div>
+      <div class="check-row"><input type="checkbox" id="closeRemember" checked><label for="closeRemember">记住我的选择，下次不再询问（可在「设置 → 关闭窗口时」修改）</label></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="updateModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
+    <div class="modal-head">
+      <div>
+        <h2 id="updateTitle">检查更新</h2>
+        <p class="muted" id="updateSub">当前版本 —</p>
+      </div>
+      <button class="icon-btn" id="closeUpdate" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="hint" id="updateState">正在检查…</div>
+      <pre class="update-notes hidden" id="updateNotes"></pre>
+      <p class="hint">
+        更新只替换程序文件：<b>聊天记录、长期记忆、好感度、人设、.env 里的 Key 都会保留</b>，
+        不用重新下载整个安装包。QAI 会关闭并自动重开，大约十几秒。
+      </p>
+      <div class="install-box">
+        <div class="install-head">
+          <div><b>连不上 GitHub？</b><span class="muted">用本地文件更新，全程不联网</span></div>
+          <div class="install-actions">
+            <button class="btn btn-ghost btn-sm" id="updateLocal" type="button">选择 zip 文件</button>
+            <input type="file" id="updateLocalFile" accept=".zip" hidden>
+          </div>
+        </div>
+        <div class="hint">从网盘 / 群里拿到 <code>QAI-&lt;版本&gt;-update.zip</code>（约 800KB）后选进来即可，选完整包也行。只会替换程序文件。</div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="updatePage" type="button">打开发布页</button>
+        <button class="btn btn-primary" id="updateApply" type="button" disabled>立即更新</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="keysModal">
+  <div class="modal setup-modal" role="dialog" aria-modal="true" aria-labelledby="keysTitle">
+    <div class="modal-head">
+      <div>
+        <h2 id="keysTitle">各厂商 API Key</h2>
+        <p class="muted">角色可以各自选厂商和模型，这里给每个厂商单独存 Key，不会改动默认模型</p>
+      </div>
+      <button class="icon-btn" id="closeKeys" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="keys-list" id="keysList">正在读取…</div>
+      <p class="hint">
+        Key 只写入本机 <code>.env</code>，由本机直接发给厂商，没有中转服务器。
+        保存后会自动重启一次机器人，新 Key 才会生效。
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="keysDone" type="button">完成</button>
+      </div>
     </div>
   </div>
 </div>

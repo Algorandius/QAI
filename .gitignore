@@ -7,7 +7,14 @@
 data/
 logs/
 runtime/
-assets/stickers/
+assets/
+!assets/README.md
+
+# 人设：只允许官方的 example 进版本库
+# 作者自己的角色（xilian / dayuyu / huiliyi …）绝不提交
+personas/*
+!personas/README.md
+!personas/example/
 
 # Python
 .venv/
@@ -26,3 +33,4 @@ context.md
 _xilian.*
 persona.txt.bak
 _cdp_drag.py
+_*.py
