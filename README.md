@@ -444,20 +444,27 @@ $env:BUILD_BASE_PYTHON = "C:\Users\fy688\.workbuddy\binaries\python\versions\3.1
 .\.venv\Scripts\python.exe build_portable.py
 ```
 
-构建会产出四个文件，**四个都要上传**，否则在线更新拿不到小包、新用户也没有一键安装器：
+构建会产出五个文件，**五个都要上传**。少了任何一个都会出事：
+
+- 少 `-update.zip` → 老用户退回 21MB 完整包
+- **少任一 `.sha256` → 客户端直接拒绝在线更新**（没有校验文件就不更新，这是刻意的）
 
 ```text
 QAI-Setup.exe                      一键安装器（新用户首选，双击即可，不用解压）
 QAI-<版本>-Windows-x64.zip         完整包（手动安装 / 备选）
 QAI-<版本>-Windows-x64.zip.sha256  完整包校验
-QAI-<版本>-update.zip              更新包（老用户在线更新，约 800KB）
+QAI-<版本>-update.zip              更新包（老用户在线更新，约 850KB）
+QAI-<版本>-update.zip.sha256       更新包校验 ← 漏掉这个，在线更新会被拒绝
 ```
+
+`.sha256` 由 `build_portable.py` 的 `write_sha256()` 自动生成，不用手工算。
 
 然后：
 
 ```powershell
 gh release create v<版本> QAI-Setup.exe QAI-<版本>-Windows-x64.zip `
   QAI-<版本>-Windows-x64.zip.sha256 QAI-<版本>-update.zip `
+  QAI-<版本>-update.zip.sha256 `
   --repo Algorandius/QAI --title "QAI <版本>" --notes-file RELEASE_NOTES-v<版本>.md --latest
 ```
 

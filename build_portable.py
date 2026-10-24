@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import secrets
@@ -508,6 +509,19 @@ def make_update_zip() -> None:
     log(f"更新包完成：{UPDATE_ZIP_PATH} ({size_kb:.0f} KB, {count} 个文件)")
 
 
+def write_sha256(path: Path) -> Path:
+    """生成 `<文件名>.sha256`（sha256sum 格式）。
+
+    在线更新要求「每个资产都有同名 .sha256」，缺一个客户端就拒绝更新，
+    所以这里统一生成，别让发版时手工补。
+    """
+    digest = hashlib.sha256(path.read_bytes()).hexdigest().lower()
+    out = path.with_name(path.name + ".sha256")
+    out.write_text(f"{digest}  {path.name}", encoding="ascii")
+    log(f"校验文件：{out.name} ({digest[:16]}…)")
+    return out
+
+
 def build_installer() -> None:
     """编译「一键安装器」：用户下载这个小 exe 双击即可，不用解压 zip。"""
     log("编译一键安装器")
@@ -552,6 +566,8 @@ def main() -> int:
     build_exe(runtime)
     make_zip()
     make_update_zip()
+    write_sha256(ZIP_PATH)
+    write_sha256(UPDATE_ZIP_PATH)
     build_installer()
     log("完成")
     return 0
