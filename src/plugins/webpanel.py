@@ -11,9 +11,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,6 +33,10 @@ PORT = max(1, env_int("WEB_PANEL_PORT", 8081))
 UI_DIR = ROOT / "webpanel_ui"
 ENV_FILE = ROOT / ".env"
 MAX_BODY = 12 * 1024 * 1024
+# 写接口令牌：机器人启动时随机生成，注入到管理台页面。
+# 它挡的是「用户浏览器里别的网页」跨站调管理台接口；同机的原生程序仍能读到
+# 页面本身，那一层只能靠文件权限（见 launcher 的权限收紧）。
+PANEL_TOKEN = secrets.token_urlsafe(24)
 
 _STATIC_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -308,10 +314,8 @@ def _models_payload() -> dict:
                 break
     providers = []
     for p in model_catalog.PROVIDERS:
-        key_env = model_catalog.PROVIDER_KEY_ENV.get(p["id"], "")
-        key_set = bool(env(key_env, ""))
-        if p["id"] == "hunyuan" and not key_set:
-            key_set = bool(env("LLM_KEY_TENCENT", "") or env("LLM_KEY_TENCENT_INTL", ""))
+        # 别名（混元 == tencent / tencent_intl）由 model_catalog 统一处理
+        key_set = any(env(name, "") for name in model_catalog.key_envs_for(p["id"]))
         if not key_set and p["id"] == current_provider:
             key_set = bool(env("LLM_API_KEY", ""))
         providers.append({
@@ -325,6 +329,8 @@ def _models_payload() -> dict:
         "ok": True,
         "current": {"provider": current_provider, "model": current_model},
         "providers": providers,
+        # 前端「去配置」要跳到启动器的各厂商 Key 面板
+        "launcher_port": max(1, env_int("LAUNCHER_PORT", 8082)),
     }
 
 
@@ -536,6 +542,40 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    # ---- 安全：只接受同源请求，写操作再校验令牌 ----
+    def _same_site_ok(self) -> bool:
+        """挡住其它网站发起的请求。
+
+        浏览器对「简单请求」不做 CORS 预检，跨站 POST/GET 是能打进来的；
+        必须在服务端看 Sec-Fetch-Site / Origin。
+        """
+        # 只拒 cross-site。same-site 要放行：QAI 外壳在 8082，用 iframe 嵌 8081，
+        # 同主机不同端口在浏览器里就是 same-site。
+        site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+        if site == "cross-site":
+            return False
+        origin = (self.headers.get("Origin") or "").strip()
+        if origin:
+            try:
+                from urllib.parse import urlparse as _up
+
+                host = (_up(origin).hostname or "").lower()
+            except Exception:
+                return False
+            if host not in ("127.0.0.1", "localhost", "::1"):
+                return False
+        return True
+
+    def _token_ok(self) -> bool:
+        got = (self.headers.get("X-QAI-Token") or "").strip()
+        return bool(got) and hmac.compare_digest(got, PANEL_TOKEN)
+
+    def do_OPTIONS(self):
+        # 不回 CORS 头：跨站带自定义头的请求会在预检阶段失败
+        self.send_response(403)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     # ---- 响应 ----
     def _send_json(self, code: int, obj) -> None:
         body = json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8")
@@ -591,6 +631,20 @@ class _Handler(BaseHTTPRequestHandler):
             body = p.read_bytes()
         except Exception:
             return False
+        if name == "index.html":
+            # 把写接口令牌注入成 meta，只有同源脚本读得到
+            try:
+                html = body.decode("utf-8")
+                meta = f'<meta name="qai-token" content="{PANEL_TOKEN}">'
+                if "qai-token" in html:
+                    html = re.sub(r'<meta name="qai-token"[^>]*>', meta, html, count=1)
+                elif "<head>" in html:
+                    html = html.replace("<head>", f"<head>\n  {meta}", 1)
+                else:
+                    html = meta + html
+                body = html.encode("utf-8")
+            except Exception:
+                pass
         self._send_bytes(200, body, ctype)
         return True
 
@@ -617,6 +671,9 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         path = u.path
+        if not self._same_site_ok():
+            self._send_json(403, {"ok": False, "error": "拒绝来自其它网站的请求"})
+            return
         qs = parse_qs(u.query, keep_blank_values=True)
 
         if path == "/stickers":
@@ -734,6 +791,13 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urlparse(self.path)
         path = u.path
+        # 同源 + 令牌：缺一个就拒，避免网页跨站改人设/清记忆
+        if not self._same_site_ok():
+            self._send_json(403, {"ok": False, "error": "拒绝来自其它网站的请求"})
+            return
+        if not self._token_ok():
+            self._send_json(403, {"ok": False, "error": "缺少或错误的控制令牌，请刷新页面后重试"})
+            return
         try:
             data = self._body_json()
         except ValueError as e:

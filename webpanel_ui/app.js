@@ -161,8 +161,12 @@ function qaiConfirm(message, options = {}) {
   });
 }
 
+// 写接口令牌：服务端注入到 <meta name="qai-token">，只有同源脚本读得到。
+const API_TOKEN = (document.querySelector('meta[name="qai-token"]') || {}).content || "";
+
 async function api(path, options = {}) {
   const opts = { ...options, headers: { ...(options.headers || {}) } };
+  if (API_TOKEN) opts.headers["X-QAI-Token"] = API_TOKEN;
   if (opts.body !== undefined && typeof opts.body !== "string") {
     opts.body = JSON.stringify(opts.body);
     opts.headers["Content-Type"] = "application/json";
@@ -1338,25 +1342,6 @@ function modelLabel(pair) {
   return m ? `${p.name} · ${m.name}` : pair;
 }
 
-function modelOptionsHtml(config) {
-  const selected = modelPair(config);
-  const cur = S.models.current || {};
-  const curText = cur.model ? `${cur.provider || "默认"} · ${cur.model}` : "模型配置里的默认模型";
-  let html = `<option value="">跟随默认（${esc(curText)}）</option>`;
-  for (const p of (S.models.providers || [])) {
-    const opts = (p.models || []).map((m) => {
-      const pair = `${p.id}|${m.id}`;
-      const suffix = p.key_set ? "" : "（未配置 Key）";
-      return `<option value="${esc(pair)}"${pair === selected ? " selected" : ""}>${esc(m.name)}${suffix}</option>`;
-    }).join("");
-    if (opts) html += `<optgroup label="${esc(p.name)}">${opts}</optgroup>`;
-  }
-  if (selected && !html.includes(`value="${esc(selected)}"`)) {
-    html += `<option value="${esc(selected)}" selected>自定义 · ${esc(selected)}</option>`;
-  }
-  return html;
-}
-
 function updateModelHint() {
   const hint = $("#pModelHint");
   if (!hint) return;
@@ -1367,10 +1352,39 @@ function updateModelHint() {
   }
   const [provider] = pair.split("|");
   const p = (S.models.providers || []).find((x) => x.id === provider);
-  hint.textContent = p && !p.key_set
-    ? `「${p.name}」还没有配置 Key；需要先在「模型配置」里填这个厂商的 Key。`
-    : `这个角色将使用 ${modelLabel(pair)}。`;
+  if (p && !p.key_set) {
+    hint.innerHTML = `「${esc(p.name)}」还没有配置 Key。`
+      + `<button class="link-btn" type="button" data-open-keys="${esc(provider)}">去配置这个厂商的 Key</button>`;
+    return;
+  }
+  hint.textContent = `这个角色将使用 ${modelLabel(pair)}。`;
 }
+
+/* 打开启动器的「各厂商 Key」面板。
+   管理台在 8081 的 iframe 里，跨端口拿不到父页面，只能靠 postMessage
+   让外壳去开；直接在浏览器里打开管理台时退化成新标签页。 */
+function launcherUrl() {
+  const port = (S.models && S.models.launcher_port) || 8082;
+  return `http://127.0.0.1:${port}/`;
+}
+
+function openProviderKeys(provider) {
+  const payload = { type: "qai:open-keys", provider: provider || "" };
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(payload, "*");
+      return;
+    }
+  } catch (e) { /* 拿不到 parent 就走新标签页 */ }
+  window.open(`${launcherUrl()}?view=keys&provider=${encodeURIComponent(provider || "")}`, "_blank");
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-open-keys]");
+  if (!btn) return;
+  e.preventDefault();
+  openProviderKeys(btn.dataset.openKeys);
+});
 
 function renderPersonaConfigFields(config) {
   const box = $("#pConfigFields");
@@ -1380,12 +1394,18 @@ function renderPersonaConfigFields(config) {
   const extras = {};
   Object.keys(config || {}).forEach((k) => { if (!known.has(k)) extras[k] = config[k]; });
   S.modal.configExtra = extras;
-  box.innerHTML = `<label class="persona-config-field persona-model-field">
+  // 模型选择用 <details> 做下拉：展开是浏览器原生行为（不依赖 JS），
+  // 选项是普通 DOM，不会像原生 <select> 弹层那样「滚到边界就关闭」。
+  box.innerHTML = `<div class="persona-config-field persona-model-field">
       <span>角色模型</span>
       <small>留空跟随默认；每个角色可以选不同厂商和模型</small>
-      <select id="pModel">${modelOptionsHtml(config)}</select>
+      <details class="model-picker" id="pModelPicker">
+        <summary class="model-picker-summary" id="pModelSummary">跟随默认</summary>
+        <div class="model-picker-menu" id="pModelMenu"></div>
+      </details>
+      <input type="hidden" id="pModel" value="${esc(modelPair(config))}">
       <div class="hint" id="pModelHint"></div>
-    </label>` + PERSONA_QUICK_DEFS.map((d) => {
+    </div>` + PERSONA_QUICK_DEFS.map((d) => {
     const raw = config ? config[d.key] : null;
     const val = raw == null || raw === "" ? "" : (d.type === "percent" ? Math.round(Number(raw) * 100) : raw);
     return `<label class="persona-config-field">
@@ -1398,9 +1418,60 @@ function renderPersonaConfigFields(config) {
       <small>留空 = 整个表情库；选择后这个角色只从这个子库挑表情</small>
       <select id="pConfigSublib">${sublibOptionsHtml(String((config && config.AI_STICKER_SUBLIB) || ""))}</select>
     </label>`;
+  renderModelPicker(config);
   updateModelHint();
   loadStickerSublibs();
 }
+
+/* 角色模型下拉：<details> + 选项按钮。
+   为什么要自建：原生 <select> 的弹层在「滚动到列表边界」时会被浏览器关闭，
+   这个列表有 10 个模型 + 5 个分组标题，弹层必然要滚，所以必然复现。
+   自建之后选项就是普通 DOM，滚动只会滚它自己，不存在被关闭的可能。 */
+function renderModelPicker(config) {
+  const menu = $("#pModelMenu");
+  const summary = $("#pModelSummary");
+  const picker = $("#pModelPicker");
+  const hidden = $("#pModel");
+  if (!menu || !summary || !hidden) return;
+
+  const value = modelPair(config);
+  const cur = S.models.current || {};
+  const curText = cur.model ? `${cur.provider || "默认"} · ${cur.model}` : "模型配置里的默认模型";
+
+  let html = `<button type="button" class="model-opt${value ? "" : " selected"}" data-value="">`
+    + `<span>跟随默认</span><em>${esc(curText)}</em></button>`;
+  for (const p of (S.models.providers || [])) {
+    const note = p.key_set ? "" : " · 未配置 Key";
+    html += `<div class="model-opt-group">${esc(p.name)}${note}</div>`;
+    for (const m of (p.models || [])) {
+      const pair = p.id + "|" + m.id;
+      html += `<button type="button" class="model-opt${pair === value ? " selected" : ""}"`
+        + ` data-value="${esc(pair)}"><span>${esc(m.name)}</span></button>`;
+    }
+  }
+  menu.innerHTML = html;
+  hidden.value = value;
+  summary.textContent = value ? modelLabel(value) : "跟随默认";
+
+  // 每次渲染都是新节点，直接绑（没有重复绑定问题）
+  menu.onclick = (e) => {
+    const opt = e.target.closest(".model-opt");
+    if (!opt) return;
+    e.preventDefault();
+    const picked = opt.dataset.value || "";
+    hidden.value = picked;
+    menu.querySelectorAll(".model-opt").forEach((el) => {
+      el.classList.toggle("selected", el === opt);
+    });
+    summary.textContent = picked ? modelLabel(picked) : "跟随默认";
+    if (picker) picker.open = false;   // 选完自动收起
+    updateModelHint();
+  };
+}
+
+/* ---------------- 角色模型下拉 ----------------
+   实现见 renderModelPicker()：用 <details> + 选项按钮，不用原生 <select>。
+   原生控件的弹层在滚动到边界时会被浏览器关闭，而这个列表必然要滚。 */
 
 function collectPersonaConfig() {
   const out = { ...(S.modal.configExtra || {}) };
@@ -1545,6 +1616,7 @@ function bindPersonaModal() {
     if (e.target === $("#personaModal")) closePersonaModal();
   });
   $("#pSave").addEventListener("click", savePersonaModal);
+  $("#pModel")?.addEventListener("change", updateModelHint);
   $("#pConfigFields").addEventListener("change", (e) => {
     if (e.target && e.target.id === "pModel") updateModelHint();
   });
@@ -2109,7 +2181,11 @@ function bindMiddleScroll() {
   });
 }
 
-/* ---------------- 新手向导 ---------------- */
+/* ---------------- 新手向导（已下线） ----------------
+   悬浮向导现在只由启动器外壳 launcher_ui 提供，避免两处实现行为不一致。
+   webpanel 里对应的 DOM 已删除，下面这段 initGuide 会因为找不到元素直接 return，
+   保留它只是为了不改动旧的 initGuide() 调用点；下次清理时整段删掉即可。
+------------------------------------------------ */
 function renderGuideMarkdown(md) {
   const inline = (s) => esc(s)
     .replace(/`([^`]+)`/g, "<code>$1</code>")

@@ -361,7 +361,9 @@ def split_sentences(text: str, limit: int = 60) -> list[str]:
                     chunks.append(sub)
         else:
             chunks.append(seg)
-    return [c for c in chunks if c] or [text]
+    # 兜底：切完为空就退回原文，避免整条回复丢掉；
+    # 但原文本身是空白时返回空列表，否则会发一条空白消息。
+    return [c for c in chunks if c] or ([text.strip()] if text.strip() else [])
 
 
 # QQ 经典表情 id 与名称，编号需与 FACE_NAME_TO_ID 保持一致。
