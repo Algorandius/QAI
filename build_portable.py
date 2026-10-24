@@ -32,7 +32,7 @@ try:
 except Exception:
     APP_VERSION = "0.0.0"
 UPDATE_ZIP_PATH = DIST / f"QAI-{APP_VERSION}-update.zip"
-SETUP_EXE = DIST / "QAI-Setup.exe"
+SETUP_EXE = DIST / f"QAI-Setup-{APP_VERSION}.exe"
 
 # 构建用的基础 Python：优先环境变量，其次开发机上的旧默认位置。
 # 换机器时只要设一次 BUILD_BASE_PYTHON，不用回来改代码。
@@ -210,7 +210,7 @@ def copy_app(runtime: Path) -> None:
     log("复制应用文件")
     files = [
         "launcher.py", "qai_window.py", "bot.py", "stop.py", "updater.py",
-        "version.py", "requirements.txt", "新手教程.md",
+        "version.py", "requirements.txt", "新手教程.md", "README.md",
     ]
     for name in files:
         src = ROOT / name
