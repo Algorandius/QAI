@@ -37,8 +37,7 @@ SETUP_EXE = DIST / f"QAI-Setup-{APP_VERSION}.exe"
 PAYLOAD_NAME = "QAI.payload.zip"
 PAYLOAD_SHA_NAME = "QAI.payload.sha256"
 
-# 构建用的基础 Python：优先环境变量，其次开发机上的旧默认位置。
-# 换机器时只要设一次 BUILD_BASE_PYTHON，不用回来改代码。
+# 构建用的基础 Python：优先环境变量，其次默认位置。
 LEGACY_BASE_PYTHON = Path(r"C:\Users\fy688\.workbuddy\binaries\python\versions\3.13.12")
 LOCK_FILE = ROOT / "requirements.lock"
 
@@ -84,8 +83,7 @@ def find_csc() -> Path | None:
     return sorted(found, reverse=True)[0] if found else None
 
 
-# 发布包只带这一套原创示例人设。
-# personas/ 下其它目录是作者自己的角色，只留在本机，不能跟着 zip 发出去。
+# 发布包只带示例人设；personas/ 下其它目录不打包。
 SHIPPED_PERSONAS = ("example",)
 DEFAULT_PERSONA = SHIPPED_PERSONAS[0]
 
@@ -317,8 +315,7 @@ def sanitize_env() -> None:
     """生成发布用的 .env：清掉一切密钥，只留可公开的默认值。"""
     log("生成脱敏 .env（不含真实 API Key）")
     text = (ROOT / ".env").read_text(encoding="utf-8")
-    # 每次构建重新生成 OneBot Token：以前是把作者本机的 Token 原样发出去，
-    # 所有下载 QAI 的人共用一个固定值。它只用于本机 127.0.0.1，但仍然不该复用。
+    # 每次构建重新生成 OneBot Token，避免所有安装共用同一个值。
     updates = dict(SANITIZE_DEFAULTS)
     updates["ONEBOT_ACCESS_TOKEN"] = "qai-" + secrets.token_hex(12)
     lines = text.splitlines()

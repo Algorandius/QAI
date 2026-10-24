@@ -508,5 +508,65 @@ class WatchdogQuotaTest(unittest.TestCase):
              l.port_open, l.start_bot, l._BOT_LAST_FAILURE) = saved
 
 
+class NapcatPathResolveTest(unittest.TestCase):
+    """用户填的 NapCat 路径五花八门，resolve_napcat_dir 要尽量救回来。"""
+
+    def setUp(self):
+        import launcher
+
+        self.l = launcher
+        self.tmp = Path(__import__("tempfile").mkdtemp(prefix="qai-napcat-"))
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _make(self, rel: str, launcher_bat: bool = True) -> Path:
+        d = self.tmp / rel
+        d.mkdir(parents=True, exist_ok=True)
+        if launcher_bat:
+            (d / "launcher-win10.bat").write_text("@echo off\n", encoding="utf-8")
+        return d
+
+    def test_exact_dir(self):
+        d = self._make("napcat")
+        self.assertEqual(self.l.resolve_napcat_dir(str(d)), d)
+
+    def test_bat_file_input(self):
+        d = self._make("napcat")
+        self.assertEqual(self.l.resolve_napcat_dir(str(d / "launcher-win10.bat")), d)
+
+    def test_quotes_and_trailing_slash(self):
+        d = self._make("napcat")
+        self.assertEqual(self.l.resolve_napcat_dir(f'"{d}/"'), d)
+
+    def test_parent_dir_with_single_child(self):
+        d = self._make("outer/napcat")
+        self.assertEqual(self.l.resolve_napcat_dir(str(self.tmp / "outer")), d)
+
+    def test_inner_subdir_walks_up(self):
+        d = self._make("napcat")
+        inner = d / "NapCat.Shell"
+        inner.mkdir()
+        self.assertEqual(self.l.resolve_napcat_dir(str(inner)), d)
+
+    def test_non_napcat_dir(self):
+        plain = self.tmp / "empty"
+        plain.mkdir()
+        self.assertIsNone(self.l.resolve_napcat_dir(str(plain)))
+
+    def test_empty_input(self):
+        self.assertIsNone(self.l.resolve_napcat_dir("   "))
+
+    def test_detect_finds_dir_under_root(self):
+        """扫描逻辑要能找到带 launcher 的目录。"""
+        d = self._make("deep/a/b/napcat")
+        import time
+
+        hits = self.l._scan_for_napcat(self.tmp, 4, time.time() + 5, [500])
+        self.assertIn(str(d), [h["path"] for h in hits])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -33,9 +33,8 @@ PORT = max(1, env_int("WEB_PANEL_PORT", 8081))
 UI_DIR = ROOT / "webpanel_ui"
 ENV_FILE = ROOT / ".env"
 MAX_BODY = 12 * 1024 * 1024
-# 写接口令牌：机器人启动时随机生成，注入到管理台页面。
-# 它挡的是「用户浏览器里别的网页」跨站调管理台接口；同机的原生程序仍能读到
-# 页面本身，那一层只能靠文件权限（见 launcher 的权限收紧）。
+# 写接口令牌：启动时随机生成，注入管理台页面，用于拒绝跨站请求。
+# 同机原生程序仍可读取页面本身，这一层靠文件权限（见 launcher 的权限收紧）。
 PANEL_TOKEN = secrets.token_urlsafe(24)
 
 _STATIC_TYPES = {
@@ -549,8 +548,7 @@ class _Handler(BaseHTTPRequestHandler):
         浏览器对「简单请求」不做 CORS 预检，跨站 POST/GET 是能打进来的；
         必须在服务端看 Sec-Fetch-Site / Origin。
         """
-        # 只拒 cross-site。same-site 要放行：QAI 外壳在 8082，用 iframe 嵌 8081，
-        # 同主机不同端口在浏览器里就是 same-site。
+        # 只拒 cross-site；外壳 8082 用 iframe 嵌 8081，属于 same-site。
         site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
         if site == "cross-site":
             return False

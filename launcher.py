@@ -155,38 +155,173 @@ def setup_status() -> dict:
     }
 
 
+def _napcat_markers() -> tuple[str, ...]:
+    """能证明「这层目录就是 NapCat」的文件/目录名。"""
+    return (
+        "launcher-win10.bat",
+        "launcher-win10-user.bat",
+        "launcher.bat",
+        "NapCat.Shell.exe",
+        "napcat.mjs",
+    )
+
+
+def _napcat_probe(path: Path) -> dict | None:
+    """判断一个目录是不是 NapCat；不是返回 None。"""
+    try:
+        if not path.is_dir():
+            return None
+    except OSError:
+        return None
+    for name in _napcat_markers():
+        try:
+            if (path / name).is_file():
+                return {"path": str(path), "marker": name,
+                        "launcher": name.startswith("launcher")}
+        except OSError:
+            continue
+    try:
+        if (path / "config" / "webui.json").is_file():
+            return {"path": str(path), "marker": "config/webui.json", "launcher": False}
+    except OSError:
+        pass
+    return None
+
+
+def resolve_napcat_dir(raw: str) -> Path | None:
+    """把用户填的东西尽量解析成真正的 NapCat 目录。
+
+    常见的填错方式，这里都兜住：
+      "D:\\NapCat\\napcat\\launcher-win10.bat"  → 当成文件，取所在目录
+      D:/NapCat/napcat/                        → 引号/斜杠/结尾分隔符
+      %USERPROFILE%\\Downloads\\napcat          → 环境变量
+      D:\\NapCat                               → 父目录，里面就一个 napcat 子目录
+      D:\\NapCat\\napcat\\NapCat.Shell          → 子目录，往上找有 launcher 的那层
+    """
+    text = str(raw or "").strip().strip('"').strip("'").strip()
+    if not text:
+        return None
+    try:
+        text = os.path.expandvars(text)
+        p = Path(text).expanduser()
+    except Exception:
+        return None
+    try:
+        if p.is_file():
+            p = p.parent
+    except OSError:
+        return None
+    if _napcat_probe(p):
+        return p
+    # 下面一层：只认唯一命中，避免选到一堆无关目录
+    try:
+        children = [c for c in p.iterdir() if c.is_dir()]
+    except OSError:
+        children = []
+    hits = [c for c in children if _napcat_probe(c)]
+    if len(hits) == 1:
+        return hits[0]
+    # 上面最多两层：用户可能选到了 NapCat 里面的子目录
+    for parent in list(p.parents)[:2]:
+        if _napcat_probe(parent):
+            return parent
+    return None
+
+
+# 自动扫描时跳过的目录名（大小写不敏感）
+_SCAN_SKIP = {
+    "windows", "program files", "program files (x86)", "programdata",
+    "$recycle.bin", "system volume information", "node_modules", ".git",
+    "recovery", "perflogs", "msocache", "config.msi", "appdata", "intel",
+    "windows.old", "__pycache__", ".venv", "venv", "site-packages",
+}
+
+
+def _scan_for_napcat(root: Path, depth: int, deadline: float,
+                     budget: list[int]) -> list[dict]:
+    """在 root 下按层扫描，找 NapCat 目录。有时间和数量上限，不会卡死。"""
+    found: list[dict] = []
+    stack: list[tuple[Path, int]] = [(root, 0)]
+    while stack:
+        if time.time() > deadline or budget[0] <= 0:
+            break
+        cur, level = stack.pop()
+        budget[0] -= 1
+        hit = _napcat_probe(cur)
+        if hit:
+            found.append(hit)
+            continue                     # 命中了就不再往里钻
+        if level >= depth:
+            continue
+        try:
+            for child in cur.iterdir():
+                if child.name.lower() in _SCAN_SKIP:
+                    continue
+                try:
+                    if child.is_dir() and not child.is_symlink():
+                        stack.append((child, level + 1))
+                except OSError:
+                    continue
+        except (OSError, PermissionError):
+            continue
+    return found
+
+
+def napcat_search_roots() -> list[tuple[Path, int]]:
+    """要扫的根目录和深度。深度越小越快。"""
+    home = Path.home()
+    roots: list[tuple[Path, int]] = [(ROOT, 2)]
+    for name, depth in (("Downloads", 4), ("Desktop", 3), ("Documents", 3)):
+        d = home / name
+        if d.is_dir():
+            roots.append((d, depth))
+    for env_name in ("LOCALAPPDATA", "APPDATA"):
+        base = os.getenv(env_name, "").strip()
+        if base:
+            roots.append((Path(base) / "Programs", 3))
+    # 各盘根目录浅扫两层（覆盖 D:\ChatBot\napcat、E:\napcat 这类放法）
+    for letter in "CDEFG":
+        drive = Path(f"{letter}:\\")
+        try:
+            if drive.is_dir():
+                roots.append((drive, 2))
+        except OSError:
+            continue
+    return roots
+
+
+def detect_napcat_dirs() -> list[dict]:
+    """在所有常见位置找 NapCat，返回按「可直接用」排序的候选列表。"""
+    hits: list[dict] = []
+    seen: set[str] = set()
+    deadline = time.time() + 6.0          # 最多找 6 秒，宁可少找也不让界面卡住
+    budget = [6000]
+
+    configured = (_read_env().get("NAPCAT_DIR") or os.getenv("NAPCAT_DIR") or "").strip()
+    if configured:
+        probe = _napcat_probe(Path(os.path.expandvars(configured)).expanduser())
+        if probe:
+            hits.append(probe)
+            seen.add(probe["path"].lower())
+
+    for base, depth in napcat_search_roots():
+        for hit in _scan_for_napcat(base, depth, deadline, budget):
+            key = hit["path"].lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            hits.append(hit)
+        if time.time() > deadline or budget[0] <= 0:
+            break
+
+    # 能直接启动的（有 launcher-win10.bat）排前面，其次路径短的
+    hits.sort(key=lambda h: (not h.get("launcher"), len(h.get("path") or "")))
+    return hits
+
+
 def setup_detect() -> dict:
     """自动探测 NapCat / QQ 的常见安装位置。"""
-    env = _read_env()
-    candidates = [
-        env.get("NAPCAT_DIR", ""),
-        os.getenv("NAPCAT_DIR", ""),
-        str(ROOT / "napcat"),
-        r"E:\ChatBot\napcat",
-        r"D:\ChatBot\napcat",
-        r"C:\ChatBot\napcat",
-        str(Path.home() / "napcat"),
-        r"D:\napcat",
-        r"C:\napcat",
-    ]
-    nap: list[dict] = []
-    seen: set[str] = set()
-    for raw in candidates:
-        if not raw:
-            continue
-        p = Path(str(raw)).expanduser()
-        try:
-            key = str(p.resolve()).lower()
-        except Exception:
-            key = str(p).lower()
-        if key in seen or not p.is_dir():
-            continue
-        seen.add(key)
-        nap.append({
-            "path": str(p),
-            "launcher": (p / "launcher-win10.bat").is_file(),
-            "webui": (p / "config" / "webui.json").is_file(),
-        })
+    nap = detect_napcat_dirs()
     qq_candidates = [
         r"D:\QQ\QQ.exe",
         r"C:\Program Files\Tencent\QQNT\QQ.exe",
@@ -194,7 +329,14 @@ def setup_detect() -> dict:
         str(Path(os.getenv("LOCALAPPDATA", "")) / "Programs" / "QQNT" / "QQ.exe"),
     ]
     qq = [p for p in qq_candidates if p and Path(p).is_file()]
-    return {"ok": True, "napcat": nap, "qq": qq, "napcat_running": port_open(NAPCAT_PORT)}
+    best = next((h for h in nap if h.get("launcher")), None)
+    return {
+        "ok": True,
+        "napcat": nap,
+        "best": best["path"] if best else "",
+        "qq": qq,
+        "napcat_running": port_open(NAPCAT_PORT),
+    }
 
 
 def setup_save(data: dict) -> dict:
@@ -222,15 +364,26 @@ def setup_save(data: dict) -> dict:
         return {"ok": False, "error": "请选择模型"}
     admin = _normalize_ids(data.get("admin_qq"), "管理员 QQ")
     groups = _normalize_ids(data.get("allowed_groups"), "群号")
-    napdir = str(data.get("napcat_dir") or env.get("NAPCAT_DIR") or "").strip()
-    # NapCat 目录不再是硬性要求：很多人想先填模型 Key、之后再装 NapCat。
-    # 只做提醒，不拦保存；没有 NapCat 时不自动启动机器人（反正也连不上 QQ）。
-    napcat_ok = bool(napdir) and (Path(napdir) / "launcher-win10.bat").is_file()
+    raw_napdir = str(data.get("napcat_dir") or env.get("NAPCAT_DIR") or "").strip()
+    # NapCat 目录可选：只填模型 Key 也能保存，没有 NapCat 时不自动启动机器人。
+    # 路径统一交给 resolve_napcat_dir 解析（允许填到 .bat、子目录、带引号）。
+    resolved = resolve_napcat_dir(raw_napdir) if raw_napdir else None
+    napdir = str(resolved) if resolved else raw_napdir.strip().strip('"').strip("'")
+    napcat_ok = bool(resolved) and (resolved / "launcher-win10.bat").is_file()
     napcat_warning = ""
     if not napdir:
         napcat_warning = "还没有填 NapCat 目录，机器人暂时不会启动；装好 NapCat 后再回来保存一次即可。"
     elif not napcat_ok:
-        napcat_warning = f"NapCat 目录里没有 launcher-win10.bat（{napdir}），机器人暂时不会启动。"
+        if resolved:
+            napcat_warning = (
+                f"目录里没找到 launcher-win10.bat（{napdir}），机器人暂时不会启动；"
+                "请确认选的是 NapCat 解压后「包含 launcher-win10.bat」那一层。"
+            )
+        else:
+            napcat_warning = (
+                f"这个路径看起来不是 NapCat 目录（{napdir}）。"
+                "可以点「自动检测」让 QAI 自己找，或选到包含 launcher-win10.bat 的那一层。"
+            )
     updates = {
         "LLM_PROVIDER": provider,
         "LLM_API_KEY": key,
@@ -279,13 +432,15 @@ def setup_save(data: dict) -> dict:
         "message": "配置已保存" + ("，机器人已启动" if started else ""),
         "started": started,
         "warning": napcat_warning,
+        # 把解析后的路径回给界面，用户填了 .bat 或子目录时能看到实际生效的是哪一层
+        "napcat_dir": napdir,
+        "napcat_ok": napcat_ok,
     }
 
 
 # ---------------------------------------------------------------- 各厂商 Key
-# 人设可以单独选厂商和模型，但每个厂商的 Key 存在 LLM_KEY_<厂商> 里。
-# 这组接口只动 LLM_KEY_<厂商>，不会改全局默认模型（LLM_PROVIDER / LLM_MODEL），
-# 所以用户给人设配第二个厂商时，不必来回切换默认模型。
+# 每个厂商的 Key 存在 LLM_KEY_<厂商>，这些接口只改对应的那一项，
+# 不动 LLM_PROVIDER / LLM_MODEL。
 
 def _clean_secret(raw: object) -> str:
     """Key 只允许单行文本，防止换行把内容注入 .env 的其它变量。"""
@@ -387,8 +542,7 @@ def save_provider_key(data: dict) -> dict:
 
 
 # ---------------------------------------------------------------- 数据备份
-# 用户换电脑是真实高频需求：聊天记录、长期记忆、好感度、人设绑定都在 data/ 里。
-# 导出不含 WebView 缓存（几十 MB 且不该迁移），导入前要求机器人已停止。
+# 导出 data/，不含 webview 缓存；导入前要求机器人已停止。
 DATA_BACKUP_SKIP = {
     "webview",
     "qai_pids.json",
@@ -486,9 +640,8 @@ def import_data_zip(raw: bytes) -> dict:
 
 
 # ---------------------------------------------------------------- 在线更新
-# 思路：程序文件和用户数据分开。更新包只含程序文件，updater.py 只覆盖
-# 白名单里的路径，data/、.env、logs/、assets/、runtime/、napcat/ 一律不碰，
-# 所以用户不用重新解压、不会丢聊天记录。
+# 更新包只含程序文件，updater.py 按白名单覆盖；
+# data/、.env、logs/、assets/、runtime/、napcat/ 不动。
 
 def _ver_tuple(raw: str) -> tuple[int, ...]:
     # 去掉 v 前缀和 -beta / +build 之类后缀，只按数字段比较
@@ -510,12 +663,12 @@ def _ver_newer(candidate: str, base: str) -> bool:
     return a > b
 
 
-# 国内用户经常连不上 GitHub，所以更新通路做成四层，任何一层能用就行：
-#   1. QAI_UPDATE_MANIFEST —— 自建 JSON 清单，完全绕开 GitHub API（网盘直链/CDN/自己服务器）
-#   2. 直连 GitHub API
-#   3. 内置加速源（gh-proxy / chenc）拼在 GitHub 地址前面
-#   4. 「本地文件更新」——用户自己从网盘/群里拿到 zip 选进来，全程不联网
-# 下载资产时同样按「直连 → 加速源」逐个试，且分别用「系统代理」「不走代理」各试一次。
+# 更新源按顺序尝试，任意一层可用即可：
+#   1. QAI_UPDATE_MANIFEST 自建清单
+#   2. GitHub API 直连
+#   3. 内置加速源
+#   4. 本地 zip
+# 下载资产时直连与加速源各试一次，走系统代理和不走代理也各试一次。
 DEFAULT_UPDATE_MIRRORS = (
     "https://gh-proxy.com/",
     "https://github.chenc.dev/",
@@ -630,7 +783,7 @@ def _normalize_release(data: dict) -> dict:
 
 
 def update_check() -> dict:
-    """查有没有新版本；所有源都失败时给出可操作的提示，而不是一句「网络错误」。"""
+    """查最新版本；所有源都失败时返回具体的处理建议。"""
     current = APP_VERSION
     data, source, err = _update_json()
     if data is None:
@@ -794,8 +947,7 @@ def update_apply(data: dict | None = None) -> dict:
     if not info.get("ok"):
         return info
 
-    # 注意：info 里带 ok=True，所以失败返回必须把 info 放前面再覆盖，
-    # 反过来写会被 info 的 ok 盖掉，界面就会把失败当成功。
+    # info 里带 ok=True，失败时先展开 info 再覆盖 ok。
     def fail(message: str, extra: dict | None = None) -> dict:
         out = {**info, **(extra or {})}
         out.update({"ok": False, "error": message})
@@ -806,8 +958,7 @@ def update_apply(data: dict | None = None) -> dict:
     url = info.get("asset_url") or ""
     if not url:
         return fail("这个 Release 里没有可用的 zip 资产，请用「从本地文件更新」")
-    # 校验和必须来自可信通道，且必须有——没有校验的自动更新等于给了投毒后门。
-    # 下载前就检查，避免白下几十 MB。
+    # 没有校验和就不做在线更新；下载前检查，省得白下。
     if not info.get("sha256_url"):
         return fail(
             "这个版本没有发布 SHA256 校验文件，为安全起见不在线更新。\n"
@@ -943,8 +1094,7 @@ def _tighten_permissions() -> None:
 
 
 # ---------------------------------------------------------------- 托盘图标
-# 后台运行时（关了窗口但机器人在跑）需要在右下角有个图标，
-# 否则用户既看不见进程、也不知道怎么把它叫回来。
+# 后台运行时在通知区显示图标，双击回到界面。
 _WM_TRAY = 0x8000 + 1
 _WM_LBUTTONDBLCLK = 0x0203
 _WM_RBUTTONUP = 0x0205
@@ -1012,9 +1162,8 @@ def _tray_loop() -> None:
                 ("hBalloonIcon", wintypes.HICON),
             ]
 
-        # 64 位下必须声明 argtypes/restype：
-        # 不声明的话句柄按 c_int 返回会被截断（HWND/HICON 都是 8 字节），
-        # WPARAM/LPARAM 按 int 传入又会 OverflowError。
+        # 64 位下要声明 argtypes/restype：默认 c_int 会截断句柄，
+        # WPARAM/LPARAM 传大值会 OverflowError。
         user32.CreateWindowExW.argtypes = [
             wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
             ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
@@ -1387,7 +1536,6 @@ _BOT_PROC: subprocess.Popen | None = None
 # --no-dialog 时置 True：自动测试里不要弹出会阻塞的消息框
 _DIALOG_DISABLED = False
 # 写接口令牌：每次启动随机生成，只注入给同源页面。
-# 没有它，用户浏览器里任意一个恶意网页都能 POST /api/update/from-file 装任意代码。
 _API_TOKEN = secrets.token_urlsafe(24)
 # 机器人是不是"用户希望它在跑"（看门狗据此决定要不要自动拉起）
 _BOT_WANTED = False
@@ -1402,8 +1550,8 @@ _NAPCAT_TOKEN: str | None = None
 _NAPCAT_INSTALL_LOCK = threading.Lock()
 _NAPCAT_INSTALL = {"status": "idle", "message": "", "progress": 0, "path": ""}
 
-# 厂商 → .env 键名。启动器是独立进程，原则上不该 import 机器人代码，
-# 所以这里留一份副本；src/ 在时以 model_catalog 为准，避免两边写歪。
+# 厂商 → .env 键名。启动器不 import 机器人代码，这里留一份副本；
+# src/ 存在时以 model_catalog 为准。
 _PROVIDER_KEY_ENV = {
     "zhipu": "LLM_KEY_ZHIPU",
     "deepseek": "LLM_KEY_DEEPSEEK",
@@ -1484,11 +1632,7 @@ def port_open(port: int, timeout: float = 0.25) -> bool:
 
 
 def _pick_free_port(preferred: int, tries: int = 10) -> int:
-    """启动器端口被别的程序占用时，往后找一个空端口。
-
-    8082 被别的软件（实测遇到过 QQ）抢走后，旧逻辑只打一行日志就退出，
-    用户看到的就是「双击 QAI 毫无反应」。这里改成换端口继续启动。
-    """
+    """端口被占用时往后找一个空端口，避免双击后没有反应。"""
     reserved = {BOT_PORT, PANEL_PORT}
     candidates = [p for p in range(preferred + 1, preferred + 1 + tries)]
     candidates += list(range(18082, 18082 + tries))
@@ -1632,10 +1776,7 @@ def _pid_image(pid: int) -> str:
 
 
 def _port_owner_hint(port: int) -> str:
-    """把「端口被占用」说得具体点：哪个 PID、哪个程序。
-
-    以前只打 app=unknown，用户根本不知道是谁抢的（实测遇到过 QQ 占 8082）。
-    """
+    """返回占用端口的 PID 和程序名，用于错误提示。"""
     pid = pid_on_port(port)
     if not pid:
         return ""
@@ -1768,8 +1909,7 @@ def start_bot() -> dict:
         _write_pids()
         ok = _wait_port(PANEL_PORT, True, 10) or _wait_port(BOT_PORT, True, 1)
         if not ok:
-            # 把进程退出码和机器人日志的最后几行一起带回去，界面上直接能看到原因，
-            # 不用让用户自己去翻 logs\launcher-bot.log。
+            # 失败时带上退出码和机器人日志尾部，界面直接显示。
             code = _BOT_PROC.poll()
             tail = _bot_log_tail(6)
             detail = f"，退出码 {code}" if code is not None else "，进程仍在但不监听端口"
@@ -2031,8 +2171,7 @@ def _safe_extract(zip_path: Path, dest: Path) -> None:
         for info in z.infolist():
             target = (dest / info.filename).resolve()
             try:
-                # 用相对路径判断是否越界：不能拿字符串前缀比，
-                # 否则 "staging_evil/" 会被误判成在 "staging/" 里面
+                # 用 relative_to 判断越界：字符串前缀比较会把 "staging_evil/" 误判成在 "staging/" 内。
                 target.relative_to(dest_resolved)
             except ValueError:
                 log(f"[launcher] 跳过越界的压缩包条目：{info.filename}")
@@ -2211,8 +2350,8 @@ def quick_connect_onebot() -> dict:
         if not stopped.get("ok"):
             return {"ok": False, "error": "需要先停止 NapCat 才能写入配置：" + str(stopped.get("error") or "")}
         time.sleep(0.8)
-        # 实测：只在后台结束进程还不够。NapCat 的命令行窗口如果还开着，
-        # 它退出时会把自己的配置写回去，于是刚写好的 OneBot 配置被覆盖。
+        # 只结束进程不够：NapCat 命令行窗口还开着时，退出会写回自己的配置，
+        # 覆盖刚写好的 OneBot 配置。
         if port_open(NAPCAT_PORT):
             return {
                 "ok": False,
@@ -2292,8 +2431,7 @@ def _send_file(h, path: Path, ctype: str) -> None:
     h.send_response(200)
     h.send_header("Content-Type", ctype)
     h.send_header("Content-Length", str(len(data)))
-    # no-store 而不是 no-cache：no-cache 仍允许 WebView 用缓存副本，
-    # 改了 app.css / app.js 却看不到效果就是这么来的。
+    # 用 no-store；no-cache 时 WebView 可能继续用旧副本。
     h.send_header("Cache-Control", "no-store, must-revalidate")
     h.send_header("Pragma", "no-cache")
     h.send_header("Expires", "0")
@@ -2307,8 +2445,7 @@ def _same_site_ok(handler) -> bool:
     浏览器对「简单请求」不做 CORS 预检，所以 Cross-Site 的 POST 是能打进来的；
     光靠 CORS 挡不住，必须在服务端看这组头。
     """
-    # 只拒 cross-site。same-site 必须放行：QAI 自己就是 8082 的页面里
-    # 嵌 8081 的 iframe，同主机不同端口在浏览器里算 same-site。
+    # 只拒 cross-site。same-site 放行：8082 页面里嵌 8081 的 iframe 属于 same-site。
     site = (handler.headers.get("Sec-Fetch-Site") or "").strip().lower()
     if site == "cross-site":
         return False
@@ -2490,9 +2627,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urlparse(self.path)
-        # 所有写操作都必须：同源 + 带令牌。缺一个就直接拒绝。
-        # 表单提交设不了自定义头，跨站 fetch 带自定义头会触发预检（我们回 403），
-        # 所以这两条一起把「用户随便打开个网页就能操控 QAI」堵死了。
+        # 写操作要求同源 + 令牌；跨站请求带不了令牌，预检也会被 403 拒绝。
         if not _same_site_ok(self):
             _send_json(self, 403, {"ok": False, "error": "拒绝来自其它网站的请求"})
             return

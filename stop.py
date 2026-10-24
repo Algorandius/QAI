@@ -42,9 +42,8 @@ DEFAULT_PORTS = {"PORT": 8080, "WEB_PANEL_PORT": 8081, "LAUNCHER_PORT": 8082}
 ROLE_ORDER = {"bot": 0, "window": 1, "launcher": 2, "": 3}
 
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-# 不给子进程传 CREATE_NO_WINDOW：stdout 已重定向到文件时，该标志会让
-# netstat / taskkill 以 STATUS_DLL_INIT_FAILED(0xC0000142) 直接失败（实测）。
-# stop.py 总是从控制台启动，本来也不需要隐藏窗口。
+# 不传 CREATE_NO_WINDOW：stdout 重定向到文件时该标志会让子进程
+# 以 STATUS_DLL_INIT_FAILED(0xC0000142) 失败。
 
 
 # ---------------------------------------------------------------- 小工具
@@ -134,11 +133,10 @@ def _hidden_startupinfo():
 
 
 def _run_capture(args: list[str], timeout: float) -> bytes:
-    """跑一个命令并拿到输出，且不弹黑窗口。
+    """执行命令并捕获输出，不弹黑窗口。
 
-    刻意不用管道（subprocess.PIPE）：某些受限账户 / 安全软件下创建匿名管道会
-    直接 WinError 5，而重定向到临时文件是稳的；同时避免 netstat 输出很长时
-    管道缓冲区被写满造成的卡死。
+    用临时文件而不是 subprocess.PIPE：受限账户或安全软件下创建匿名管道会报
+    WinError 5；也能避免输出很长时管道写满导致卡死。
     """
     fd, path = tempfile.mkstemp(prefix="qai-stop-", suffix=".out")
     try:
