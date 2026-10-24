@@ -33,6 +33,10 @@ except Exception:
     APP_VERSION = "0.0.0"
 UPDATE_ZIP_PATH = DIST / f"QAI-{APP_VERSION}-update.zip"
 SETUP_EXE = DIST / f"QAI-Setup-{APP_VERSION}.exe"
+# 离线安装器：把完整包塞进 exe，双击就装、全程不联网
+SETUP_OFFLINE_EXE = DIST / f"QAI-Setup-{APP_VERSION}-offline.exe"
+PAYLOAD_NAME = "QAI.payload.zip"
+PAYLOAD_SHA_NAME = "QAI.payload.sha256"
 
 # 构建用的基础 Python：优先环境变量，其次开发机上的旧默认位置。
 # 换机器时只要设一次 BUILD_BASE_PYTHON，不用回来改代码。
@@ -523,7 +527,12 @@ def write_sha256(path: Path) -> Path:
 
 
 def build_installer() -> None:
-    """编译「一键安装器」：用户下载这个小 exe 双击即可，不用解压 zip。"""
+    """编译两个安装器：
+
+    - SETUP_EXE            在线版（约 100KB），运行时从 Releases 下载完整包
+    - SETUP_OFFLINE_EXE    离线版（约 21MB），把完整包直接塞进 exe，
+                           双击就装、全程不联网，适合直接发给别人
+    """
     log("编译一键安装器")
     csc = find_csc()
     if not csc:
@@ -534,20 +543,39 @@ def build_installer() -> None:
         log("缺少 installer.cs，跳过安装器")
         return
     icon = ROOT / "launcher_ui" / "app.ico"
-    cmd = [
+    base_cmd = [
         str(csc), "/nologo", "/target:winexe", "/optimize+",
         f"/win32icon:{icon}",
         "/r:System.Windows.Forms.dll",
         "/r:System.Drawing.dll",
         "/r:System.IO.Compression.FileSystem.dll",
-        f"/out:{SETUP_EXE}",
+    ]
+
+    cmd = base_cmd + [f"/out:{SETUP_EXE}", str(src)]
+    rc, out = _run_cmd(cmd)
+    if rc != 0 or not SETUP_EXE.is_file():
+        log(f"在线安装器编译失败：{out[:400]}")
+    else:
+        log(f"在线安装器：{SETUP_EXE.name} ({SETUP_EXE.stat().st_size // 1024} KB)")
+
+    sha_file = ZIP_PATH.with_name(ZIP_PATH.name + ".sha256")
+    if not ZIP_PATH.is_file() or not sha_file.is_file():
+        log("缺少完整包或校验文件，跳过离线安装器")
+        return
+    cmd = base_cmd + [
+        f"/resource:{ZIP_PATH},{PAYLOAD_NAME}",
+        f"/resource:{sha_file},{PAYLOAD_SHA_NAME}",
+        f"/out:{SETUP_OFFLINE_EXE}",
         str(src),
     ]
     rc, out = _run_cmd(cmd)
-    if rc != 0 or not SETUP_EXE.is_file():
-        log(f"安装器编译失败：{out[:400]}")
+    if rc != 0 or not SETUP_OFFLINE_EXE.is_file():
+        log(f"离线安装器编译失败：{out[:400]}")
         return
-    log(f"安装器生成：{SETUP_EXE} ({SETUP_EXE.stat().st_size // 1024} KB)")
+    log(
+        f"离线安装器：{SETUP_OFFLINE_EXE.name} "
+        f"({SETUP_OFFLINE_EXE.stat().st_size / 1024 / 1024:.1f} MB，含完整包)"
+    )
 
 
 def main() -> int:
