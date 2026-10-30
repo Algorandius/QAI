@@ -32,6 +32,8 @@ const TAB_META = {
   chatlog: ["聊天记录", "筛选并查看机器人说过的话"],
   affinity: ["好感度", "按群成员记录的好感分数"],
   stickers: ["表情库", "收藏表情与标签管理"],
+  diary: ["日记", "每个群、每个人设各写一本日记"],
+  commands: ["指令", "机器人支持的聊天指令与别名"],
   settings: ["设置", "管理员、白名单与 .env 配置"],
 };
 
@@ -244,6 +246,10 @@ function activateTab(name, opts = {}) {
     loadAffinity();
   } else if (name === "stickers") {
     loadStickers();
+  } else if (name === "diary") {
+    loadDiary();
+  } else if (name === "commands") {
+    loadCommands();
   } else if (name === "settings") {
     loadSettings();
     loadConfig();
@@ -2047,8 +2053,157 @@ function bindStickers() {
 }
 
 /* ---------------- 设置 ---------------- */
-async function loadSettings() {
+/* ---------------- 指令 ---------------- */
+async function loadCommands() {
+  const box = $("#cmdList");
+  if (!box) return;
+  box.innerHTML = '<div class="empty-state"><span class="spinner"></span> 加载中…</div>';
   try {
+    const data = await api("/api/commands");
+    S.cmdData = data;
+    $("#cmdNote").textContent = data.note || "";
+    renderCommands();
+  } catch (e) {
+    box.innerHTML = `<div class="empty-state">读取指令失败：${esc(e.message)}</div>`;
+  }
+}
+
+function renderCommands() {
+  const box = $("#cmdList");
+  const data = S.cmdData;
+  if (!box || !data) return;
+  const q = String(S.cmdQuery || "").trim().toLowerCase();
+  const groups = (data.groups || []).map((g) => ({
+    ...g,
+    items: (g.items || []).filter((it) => {
+      if (!q) return true;
+      const hay = [it.command, it.desc || "", ...(it.aliases || [])].join(" ").toLowerCase();
+      return hay.includes(q);
+    }),
+  })).filter((g) => g.items.length);
+
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  $("#cmdMeta").textContent = q
+    ? `匹配 ${total} / ${n(data.count)} 条`
+    : `共 ${n(data.count)} 条`;
+
+  if (!total) {
+    box.innerHTML = `<div class="empty-state">没有匹配「${esc(q)}」的指令。</div>`;
+    return;
+  }
+
+  box.innerHTML = groups.map((g) => `
+    <div class="cmd-group">
+      <div class="cmd-group-head">
+        <b>${esc(g.name)}</b>
+        <span class="muted">${esc(g.desc || "")}</span>
+      </div>
+      <div class="cmd-rows">
+        ${g.items.map((it) => `
+          <div class="cmd-row">
+            <code class="cmd-name">/${esc(it.command)}</code>
+            <div class="cmd-body">
+              <div class="cmd-desc">${esc(it.desc || "（暂无说明）")}</div>
+              ${it.aliases && it.aliases.length
+                ? `<div class="cmd-alias">别名：${it.aliases.map((a) => `<code>${esc(a)}</code>`).join(" ")}</div>`
+                : ""}
+            </div>
+            <button class="btn btn-ghost btn-sm cmd-copy" type="button" data-copy="/${esc(it.command)}">复制</button>
+          </div>`).join("")}
+      </div>
+    </div>`).join("");
+
+  // 点击复制：方便直接粘到 QQ 里
+  box.querySelectorAll(".cmd-copy").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const text = btn.dataset.copy || "";
+      try {
+        await navigator.clipboard.writeText(text);
+        const old = btn.textContent;
+        btn.textContent = "已复制";
+        setTimeout(() => { btn.textContent = old; }, 1200);
+      } catch (e) {
+        toast("复制失败，手动选中即可", "error");
+      }
+    });
+  });
+}
+
+/* ---------------- 日记 ---------------- */
+async function loadDiary() {
+  const box = $("#diaryEntries");
+  if (!box) return;
+  const key = S.diaryKey || "";
+  const q = S.diaryQuery || "";
+  const params = new URLSearchParams();
+  if (key) params.set("key", key);
+  if (q) params.set("q", q);
+  try {
+    const data = await api(`/api/diary?${params.toString()}`);
+    S.diaryData = data;
+    renderDiary(data);
+  } catch (e) {
+    box.innerHTML = `<div class="empty-state">读取日记失败：${esc(e.message)}</div>`;
+  }
+}
+
+function renderDiary(data) {
+  const keysBox = $("#diaryKeys");
+  const pendingBox = $("#diaryPending");
+  const entriesBox = $("#diaryEntries");
+  const empty = $("#diaryEmpty");
+  if (!keysBox || !entriesBox) return;
+
+  $("#diaryMeta").textContent = `${n(data.stats?.entries || 0)} 篇 · ${n(data.stats?.scenes || 0)} 本`;
+  const auto = data.auto || {};
+  $("#diaryAutoHint").textContent = auto.describe
+    ? (auto.enabled ? `自动写日记：${auto.describe}` : `自动写日记已关闭（${auto.describe}）`)
+    : "";
+
+  const keys = data.keys || [];
+  if (!keys.length) {
+    keysBox.innerHTML = '<div class="empty-state">还没有日记。每天到点会自动写，也可以在群里发 /日记 写。</div>';
+    entriesBox.innerHTML = "";
+    empty?.classList.add("hidden");
+    pendingBox.innerHTML = "";
+    return;
+  }
+
+  keysBox.innerHTML = keys.map((k) => `
+    <button class="diary-key${k.key === data.selected ? " active" : ""}" type="button" data-key="${esc(k.key)}">
+      <span class="diary-key-name">${esc(k.label || k.key)}</span>
+      <span class="diary-key-meta">${n(k.count)} 篇 · ${esc(k.latest_date || "")}</span>
+    </button>`).join("");
+  keysBox.querySelectorAll(".diary-key").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      S.diaryKey = btn.dataset.key;
+      loadDiary();
+    });
+  });
+
+  const pending = data.pending || [];
+  pendingBox.innerHTML = pending.length
+    ? pending.map((p) => `<div class="diary-pending-item">${esc(p.label || "")}</div>`).join("")
+    : '<div class="diary-pending-item muted">都写过了</div>';
+
+  const entries = data.entries || [];
+  if (!entries.length) {
+    entriesBox.innerHTML = '<div class="empty-state">这本还没有内容。</div>';
+    empty?.classList.add("hidden");
+    return;
+  }
+  empty?.classList.add("hidden");
+  entriesBox.innerHTML = entries.map((e) => `
+    <article class="diary-entry">
+      <div class="diary-entry-head">
+        <b>${esc(e.date || "")}</b>
+        <span class="muted">${e.turns ? `${n(e.turns)} 条素材` : ""}${e.mood ? ` · 心情 ${e.mood}` : ""}</span>
+      </div>
+      <div class="diary-entry-body">${esc(e.text || "").replace(/\n/g, "<br>")}</div>
+    </article>`).join("");
+}
+
+async function loadSettings() {  try {
     const data = await api("/api/settings");
     S.settings = data;
     renderWhitelist();
@@ -2414,6 +2569,18 @@ function bindGlobal() {
   bindChatlog();
   bindAffinity();
   bindStickers();
+  $("#cmdSearch")?.addEventListener("input", (e) => {
+    S.cmdQuery = e.target.value;
+    renderCommands();
+  });
+  $("#diarySearch")?.addEventListener("input", (e) => {
+    const val = e.target.value;
+    clearTimeout(S.diaryTimer);
+    S.diaryTimer = setTimeout(() => {
+      S.diaryQuery = val;
+      loadDiary();
+    }, 350);
+  });
   bindSettings();
   bindCardLayout();
   bindCardResize();

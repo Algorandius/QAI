@@ -23,6 +23,7 @@ from nonebot.adapters.onebot.v11 import (
 from nonebot.params import CommandArg
 
 from src.config import ROOT, env_set
+from src import msg_plus, sticker_duel, sticker_lib
 from src.stats import STATS, uptime_str
 
 ADMIN_QQS = env_set("BOT_ADMIN_QQ")
@@ -100,6 +101,16 @@ async def _(event: MessageEvent):
         "/表情包          从收藏里随机发一个表情包\n"
         "/建表情库         拉取收藏 → 视觉自动打标签（管理员或私聊）\n"
         "/aireset         清空本群/本人的对话记忆\n"
+        "\n【消息增强】\n"
+        "/history [条数]   拉最近聊天记录，合并转发给你（默认 15 条）\n"
+        "/赞              给你引用的消息贴一个表情回应\n"
+        "/已读            把引用的消息标记为已读\n"
+        "/消息增强         查看已读/输入状态/表情回应/历史补全的开关\n"
+        "\n【斗图】\n"
+        "/开启斗图模式     本群开启斗图：有人发表情包它就回\n"
+        "/关闭斗图模式     关掉\n"
+        "/收图            引用一条表情包消息 → 收进库；不引用则从收藏拉一批\n"
+        "（别人发的表情包会自动收藏，不用手动收）\n"
         "戳一戳机器人      她会用当前人设回你一句\n"
     )
     await say(event, text)
@@ -446,3 +457,170 @@ async def _(bot: Bot, event: GroupRequestEvent):
             STATS["sent"] += 1
         except Exception as e:
             logger.warning(f"通知管理员失败: {e}")
+
+
+# ---------------------------------------------------------------- 消息类增强
+# 这些命令都依赖 NapCat 的扩展接口；协议端不支持时会明确提示，不会静默失败。
+
+history_cmd = on_command("history", aliases={"历史", "聊天记录"}, priority=10, block=True)
+
+
+@history_cmd.handle()
+async def _(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
+    """把最近的聊天记录打包成合并转发发给你自己看。"""
+    if not group_allowed(getattr(event, "group_id", 0)):
+        await say(event, "本群未启用。")
+        return
+    try:
+        count = int(arg.extract_plain_text().strip() or 15)
+    except ValueError:
+        count = 15
+    count = max(3, min(count, 50))
+    is_group = isinstance(event, GroupMessageEvent)
+    target = event.group_id if is_group else event.user_id
+    rows = await msg_plus.fetch_history(bot, is_group, target, count=count)
+    if not rows:
+        await say(event, "没拉到聊天记录：可能是协议端不支持历史消息接口，或群消息太少。")
+        return
+    nodes = []
+    for r in rows:
+        nodes.append({
+            "name": "机器人" if r["role"] == "assistant" else "群友",
+            "uin": str(bot.self_id if r["role"] == "assistant" else "0"),
+            "content": str(r.get("content") or "")[:200],
+        })
+    ok = await msg_plus.forward_nodes(bot, is_group, target, nodes, title=f"最近 {len(nodes)} 条")
+    if not ok:
+        # 合并转发失败就退化成纯文本清单
+        lines = [f"{i + 1}. {n['content'][:60]}" for i, n in enumerate(nodes[:15])]
+        await say(event, "合并转发不可用，纯文本列出：\n" + "\n".join(lines))
+
+
+react_cmd = on_command("赞", aliases={"点赞回复", "react"}, priority=10, block=True)
+
+
+@react_cmd.handle()
+async def _(bot: Bot, event: MessageEvent):
+    """给你引用的那条消息（或机器人上一条）贴一个表情回应。"""
+    target_mid = event.reply.message_id if event.reply else None
+    if not target_mid:
+        target_mid = LAST_BOT_MSG.get(getattr(event, "group_id", 0))
+    if not target_mid:
+        await say(event, "没找到可以回应的消息：引用一条消息再发 /赞。")
+        return
+    await msg_plus.react(bot, target_mid, "praise")
+    await say(event, "点了。")
+
+
+read_cmd = on_command("已读", aliases={"read"}, priority=10, block=True)
+
+
+@read_cmd.handle()
+async def _(bot: Bot, event: MessageEvent):
+    """把引用的那条消息标记为已读。"""
+    if not event.reply:
+        await say(event, "引用一条消息再发 /已读。机器人收到消息时默认会自动标记已读。")
+        return
+    await msg_plus.mark_read(bot, event.reply.message_id)
+    await say(event, "已标记。")
+
+
+msgstatus_cmd = on_command("消息增强", aliases={"msgenhance"}, priority=10, block=True)
+
+
+@msgstatus_cmd.handle()
+async def _(event: MessageEvent):
+    """查看消息类增强的开关与协议端支持情况。"""
+    flags = [
+        ("已读标记", msg_plus.MSG_READ_MARK),
+        ("正在输入", msg_plus.MSG_INPUT_STATUS),
+        ("表情回应", msg_plus.MSG_EMOJI_LIKE),
+        ("历史补全", msg_plus.MSG_HISTORY_BACKFILL),
+    ]
+    lines = ["【消息类增强】"]
+    for name, on in flags:
+        lines.append(f"{'开' if on else '关'}  {name}")
+    if msg_plus._UNSUPPORTED:
+        lines.append("协议端不支持：" + "、".join(sorted(msg_plus._UNSUPPORTED)))
+    else:
+        lines.append("协议端支持：全部可用")
+    lines.append(f"历史补全条数：{msg_plus.MSG_HISTORY_LIMIT}")
+    await say(event, "\n".join(lines))
+
+
+# ---------------------------------------------------------------- 斗图模式
+duel_on_cmd = on_command("开启斗图模式", aliases={"打开斗图", "斗图开"}, priority=10, block=True)
+
+
+@duel_on_cmd.handle()
+async def _(event: MessageEvent):
+    """在本群/本会话开启斗图：有人发表情包，机器人也回。"""
+    if not group_allowed(getattr(event, "group_id", 0)):
+        await say(event, "本群未启用。")
+        return
+    scene = event.group_id if isinstance(event, GroupMessageEvent) else event.user_id
+    if not sticker_lib.count():
+        await say(event, "我库里还没有表情包。先发几张给我收藏，或者让管理员跑 /建表情库。")
+        return
+    sticker_duel.duel_start(scene)
+    await say(
+        event,
+        f"斗图模式已开启（库里 {sticker_lib.count()} 张）。"
+        f"发个表情包来试试～\n"
+        f"每分钟最多回 {sticker_duel.DUEL_MAX_PER_ROUND} 张，{sticker_duel.DUEL_SESSION_TIMEOUT // 60} 分钟没动静自动关。"
+        f"\n发 /关闭斗图模式 可随时停。",
+    )
+
+
+duel_off_cmd = on_command("关闭斗图模式", aliases={"关掉斗图", "斗图关", "停止斗图"}, priority=10, block=True)
+
+
+@duel_off_cmd.handle()
+async def _(event: MessageEvent):
+    scene = event.group_id if isinstance(event, GroupMessageEvent) else event.user_id
+    if not sticker_duel.duel_enabled(scene):
+        await say(event, "这里没开斗图模式。")
+        return
+    sticker_duel.duel_stop(scene)
+    await say(event, "斗图模式已关闭。")
+
+
+collect_cmd = on_command("收图", aliases={"收藏表情", "收表情包"}, priority=10, block=True)
+
+
+@collect_cmd.handle()
+async def _(bot: Bot, event: MessageEvent):
+    """收藏：引用一条带表情包/图片的消息再发 /收图；不引用则从收藏里拉。"""
+    replied_urls: list[str] = []
+    if event.reply:
+        try:
+            src_msg = await bot.call_api("get_msg", message_id=event.reply.message_id)
+            segs = (src_msg or {}).get("message") or []
+            for seg in segs:
+                if not isinstance(seg, dict):
+                    continue
+                if seg.get("type") in ("image", "mface", "sticker"):
+                    data = seg.get("data") or {}
+                    u = data.get("url") or data.get("file") or ""
+                    if isinstance(u, str) and u.startswith("http"):
+                        replied_urls.append(u)
+        except Exception as e:
+            logger.warning(f"[收图] 取被引用消息失败: {e}")
+    if replied_urls:
+        n = await sticker_duel.collect_from_urls(replied_urls)
+        if n:
+            await say(event, f"收到 {n} 张，当前库里共 {sticker_lib.count()} 张。")
+        else:
+            await say(event, "这张没收到（可能已经收过，或不是图片）。")
+        return
+    # 没引用：从机器人自己的 QQ 收藏里拉一批
+    try:
+        urls = await sticker_lib.fetch_custom_faces(bot, count=40)
+    except Exception as e:
+        await say(event, f"拉收藏失败：{e}")
+        return
+    if not urls:
+        await say(event, "没拉到收藏表情：确认机器人这个号上有收藏过表情。")
+        return
+    n = await sticker_duel.collect_from_urls(urls)
+    await say(event, f"从收藏里新收了 {n} 张，当前库里共 {sticker_lib.count()} 张。")
