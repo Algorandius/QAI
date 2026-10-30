@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlparse
 
 from nonebot import logger
 
-from src import longterm, memory, model_catalog, personas, sticker_lib
+from src import commands_doc, diary, diary_auto, longterm, memory, model_catalog, personas, sticker_lib
 from src.config import ROOT, env, env_bool, env_int
 from src.stats import STATS, uptime_str
 
@@ -382,6 +382,86 @@ def _status_payload() -> dict:
             "list": personas.list_personas(),
         },
     }
+
+
+def _diary_payload(qs: dict) -> dict:
+    """日记页数据：目录 + 选中那一本的全文。
+
+    查询参数：
+      key   指定「场景|人设」（不给则用第一个）
+      q     按正文/人设名/场景筛选
+    """
+    wanted = str(qs.get("key", [""])[0] or "").strip()
+    text_q = str(qs.get("q", [""])[0] or "").strip().lower()
+
+    keys = diary.all_keys()
+    if text_q:
+        keys = [
+            k for k in keys
+            if text_q in str(k.get("latest_text") or "").lower()
+            or text_q in str(k.get("persona_name") or "").lower()
+            or text_q in str(k.get("persona") or "").lower()
+            or text_q in str(k.get("scene_id") or "")
+        ]
+
+    scene_names = _scene_name_map()
+
+    def label(k: dict) -> str:
+        scene = k.get("scene") or ""
+        sid = k.get("scene_id") or 0
+        where = scene_names.get(f"{scene}:{sid}") or (f"群 {sid}" if scene == "group" else f"私聊 {sid}")
+        who = k.get("persona_name") or k.get("persona") or "默认人设"
+        return f"{where} · {who}"
+
+    for k in keys:
+        k["label"] = label(k)
+
+    if not wanted and keys:
+        wanted = keys[0]["key"]
+
+    entries: list[dict] = []
+    if wanted:
+        scene, sid, pid = diary.split_key(wanted)
+        if scene:
+            entries = diary.list_entries(scene == "group", sid, pid)
+
+    # 今天还没写的（让用户知道谁会写）
+    try:
+        pending = diary_auto.which_entries_missing_today()
+    except Exception:
+        pending = []
+    for p in pending:
+        where = scene_names.get(f"{p['scene']}:{p['scene_id']}") or f"{p['scene']} {p['scene_id']}"
+        p["label"] = f"{where} · {p.get('persona_name') or p.get('persona')}"
+
+    return {
+        "ok": True,
+        "keys": keys,
+        "selected": wanted,
+        "entries": entries,
+        "pending": pending,
+        "stats": diary.stats(),
+        "auto": {
+            "enabled": bool(diary_auto.DIARY_ENABLE and diary_auto.DIARY_AUTO),
+            "hour": diary_auto.DIARY_HOUR,
+            "minute": diary_auto.DIARY_MINUTE,
+            "describe": diary_auto.describe(),
+        },
+    }
+
+
+def _scene_name_map() -> dict[str, str]:
+    """场景 id → 可读名字（群名拿不到，就用「群 12345」）。"""
+    out: dict[str, str] = {}
+    try:
+        from src.plugins.ai_chat import GROUP_CTX, PRIVATE_CTX
+    except Exception:
+        return out
+    for gid in list(GROUP_CTX.keys())[:200]:
+        out[f"group:{gid}"] = f"群 {gid}"
+    for uid in list(PRIVATE_CTX.keys())[:200]:
+        out[f"private:{uid}"] = f"私聊 {uid}"
+    return out
 
 
 def _chatlog_payload(qs: dict) -> list[dict]:
@@ -758,6 +838,13 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/sticker-sublibs":
                 self._send_json(200, {"ok": True, "sublibs": sticker_lib.sublib_counts()})
+                return
+            if path == "/api/commands":
+                # 指令目录直接从插件源码解析，命令改了面板自动跟着变
+                self._send_json(200, commands_doc.list_commands())
+                return
+            if path == "/api/diary":
+                self._send_json(200, _diary_payload(qs))
                 return
             if path.startswith("/persona-avatar/"):
                 pid = path[len("/persona-avatar/"):]

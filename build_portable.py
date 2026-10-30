@@ -308,6 +308,23 @@ SANITIZE_DEFAULTS = {
     "LLM_PROVIDER": "",
     # 关窗口行为：ask = 每次询问（默认），exit = 全停，background = 只关界面
     "QAI_CLOSE_BEHAVIOR": "ask",
+    # 消息类增强（需要 NapCat 扩展接口，失败会自动降级）
+    "MSG_READ_MARK": "true",
+    "MSG_INPUT_STATUS": "true",
+    "MSG_EMOJI_LIKE": "true",
+    "MSG_HISTORY_BACKFILL": "true",
+    "MSG_HISTORY_LIMIT": "20",
+    # 斗图与自动收藏表情包
+    "STICKER_AUTO_COLLECT": "true",
+    "STICKER_COLLECT_MAX_PER_HOUR": "60",
+    "STICKER_DUEL_MAX": "3",
+    # 每日日记（按人设×场景各写一本）
+    "DIARY_ENABLE": "true",
+    "DIARY_AUTO": "true",
+    "DIARY_HOUR": "23",
+    "DIARY_MINUTE": "30",
+    "DIARY_MIN_TURNS": "4",
+    "DIARY_MAX_ENTRIES": "400",
 }
 
 

@@ -48,6 +48,14 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM8.5 7A1.5 1.5 0 1 1 7 8.5 1.5 1.5 0 0 1 8.5 7Zm7 10H8v-2h7.5v2Zm1.5-5.5a1.5 1.5 0 1 1 1.5-1.5 1.5 1.5 0 0 1-1.5 1.5Z"/></svg>
         <span>表情库</span>
       </a>
+      <a class="nav-item" data-tab="diary" href="#diary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6Zm7 1.5L18.5 9H13V3.5ZM8 13h8v1.6H8V13Zm0 3.4h8V18H8v-1.6Z"/></svg>
+        <span>日记</span>
+      </a>
+      <a class="nav-item" data-tab="commands" href="#commands">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm-9.5 13H8.2l-2.6-3 2.6-3h2.3L8.2 14l2.3 3Zm3.1 0h-1.5l3.4-6h1.5l-3.4 6Zm5.2 0h-2.3l2.3-3-2.3-3h2.3l2.6 3-2.6 3Z"/></svg>
+        <span>指令</span>
+      </a>
       <a class="nav-item" data-tab="settings" href="#settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.1 7.1 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.72 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.05.24.25.42.5.42h3.84c.25 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Z"/></svg>
         <span>设置</span>
@@ -208,6 +216,48 @@
         </div>
         <div id="stickerFilterBar" class="sticker-filter-bar"></div>
         <div id="stickerGrid" class="sticker-grid"></div>
+      </section>
+    </section>
+
+    <!-- 日记 -->
+    <section class="tab-panel" id="tab-diary">
+      <section class="card">
+        <div class="card-head">
+          <div><h2>日记</h2><p class="muted">每个群、每个人设各写一本，口吻跟人设一致</p></div>
+          <div class="sticker-head-actions">
+            <span class="muted" id="diaryMeta"></span>
+          </div>
+        </div>
+        <div class="hint" id="diaryAutoHint"></div>
+        <div class="diary-layout">
+          <div class="diary-side">
+            <input id="diarySearch" class="cmd-search diary-search" placeholder="搜索人设 / 群号 / 内容…" autocomplete="off">
+            <div id="diaryKeys" class="diary-keys"></div>
+            <div class="diary-pending">
+              <div class="diary-pending-title">今天还没写</div>
+              <div id="diaryPending" class="diary-pending-list"></div>
+            </div>
+          </div>
+          <div class="diary-main">
+            <div id="diaryEmpty" class="empty-state hidden">左边选一本日记看。</div>
+            <div id="diaryEntries"></div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- 指令 -->
+    <section class="tab-panel" id="tab-commands">
+      <section class="card">
+        <div class="card-head">
+          <div><h2>可用指令</h2><p class="muted">在 QQ 里直接发送即可；斜杠可换成 ! 或 ！</p></div>
+          <div class="sticker-head-actions">
+            <input id="cmdSearch" class="cmd-search" placeholder="搜索指令或别名…" autocomplete="off">
+            <span class="muted" id="cmdMeta"></span>
+          </div>
+        </div>
+        <div class="hint" id="cmdNote"></div>
+        <div id="cmdList" class="cmd-list"></div>
       </section>
     </section>
 

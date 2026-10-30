@@ -568,5 +568,222 @@ class NapcatPathResolveTest(unittest.TestCase):
         self.assertIn(str(d), [h["path"] for h in hits])
 
 
+class EnvBoolTest(unittest.TestCase):
+    """env_bool 曾经写死 "false" 兜底，导致 25 个默认开启的功能实际一直是关的。"""
+
+    def setUp(self):
+        import os
+
+        self.os = os
+        self.saved = {k: os.environ.get(k) for k in ("QAI_TEST_ON", "QAI_TEST_OFF", "QAI_TEST_NONE")}
+        for k in self.saved:
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            if v is None:
+                self.os.environ.pop(k, None)
+            else:
+                self.os.environ[k] = v
+
+    def test_missing_key_uses_default_true(self):
+        from src.config import env_bool
+
+        self.assertTrue(env_bool("QAI_TEST_NONE", True))
+
+    def test_missing_key_uses_default_false(self):
+        from src.config import env_bool
+
+        self.assertFalse(env_bool("QAI_TEST_NONE", False))
+
+    def test_explicit_values_win(self):
+        from src.config import env_bool
+
+        self.os.environ["QAI_TEST_ON"] = "1"
+        self.assertEqual(env_bool("QAI_TEST_ON", False), True)
+        self.os.environ["QAI_TEST_OFF"] = "false"
+        self.assertEqual(env_bool("QAI_TEST_OFF", True), False)
+
+    def test_truthy_spellings(self):
+        from src.config import env_bool
+
+        for raw in ("1", "true", "TRUE", "yes", "on"):
+            self.os.environ["QAI_TEST_ON"] = raw
+            self.assertTrue(env_bool("QAI_TEST_ON"), raw)
+
+
+class ImageSniffTest(unittest.TestCase):
+    """识图：QQ CDN 在 rkey 过期时返回 200 + JSON，不能当图片发给模型。"""
+
+    def test_sniff_real_formats(self):
+        from src.plugins import ai_chat
+
+        cases = [
+            (b"\xff\xd8\xff\xe0\x00\x10JFIF", "image/jpeg"),
+            (b"\x89PNG\r\n\x1a\n" + b"\x00" * 8, "image/png"),
+            (b"GIF89a" + b"\x00" * 8, "image/gif"),
+            (b"RIFF\x00\x00\x00\x00WEBPVP8 ", "image/webp"),
+        ]
+        for data, want in cases:
+            self.assertEqual(ai_chat._sniff_image_mime(data), want, want)
+
+    def test_rejects_non_image(self):
+        from src.plugins import ai_chat
+
+        for data in (b'{"code":-1,"message":"rkey expired"}', b"<html>404</html>", b""):
+            self.assertEqual(ai_chat._sniff_image_mime(data), "")
+
+
+class ReactPickTest(unittest.TestCase):
+    """表情回应：按对方说的话挑反应，闲聊时不给。"""
+
+    def test_picks_by_text(self):
+        from src import msg_plus
+
+        self.assertEqual(msg_plus.pick_react_kind("你好厉害"), "praise")
+        self.assertEqual(msg_plus.pick_react_kind("笑死我了"), "laugh")
+        self.assertEqual(msg_plus.pick_react_kind("谢谢你"), "clap")
+        self.assertEqual(msg_plus.pick_react_kind("加油啊"), "cheer")
+
+    def test_plain_chat_gets_none(self):
+        from src import msg_plus
+
+        self.assertIsNone(msg_plus.pick_react_kind("今天天气还行"))
+        self.assertIsNone(msg_plus.pick_react_kind(""))
+
+
+class StickerDuelTest(unittest.TestCase):
+    """斗图模式：开关、冷却、闲置自动关闭。"""
+
+    def setUp(self):
+        from src import sticker_duel
+
+        self.d = sticker_duel
+        self.scene = 999001
+        self.d.duel_stop(self.scene)
+
+    def tearDown(self):
+        self.d.duel_stop(self.scene)
+
+    def test_off_by_default(self):
+        self.assertFalse(self.d.duel_enabled(self.scene))
+
+    def test_start_and_stop(self):
+        self.d.duel_start(self.scene)
+        self.assertTrue(self.d.duel_enabled(self.scene))
+        self.d.duel_stop(self.scene)
+        self.assertFalse(self.d.duel_enabled(self.scene))
+
+    def test_cooldown_blocks_immediate_reply(self):
+        self.d.duel_start(self.scene)
+        self.d.duel_touch(self.scene)          # 刚回完一张
+        self.assertFalse(self.d.duel_ready(self.scene))
+
+    def test_idle_session_expires(self):
+        self.d.duel_start(self.scene)
+        self.d._duel_last[self.scene] = 0.0    # 假装很久没互动
+        self.assertFalse(self.d.duel_enabled(self.scene))
+
+    def test_round_size_within_limit(self):
+        for _ in range(20):
+            n = self.d.duel_round_size()
+            self.assertGreaterEqual(n, 1)
+            self.assertLessEqual(n, self.d.DUEL_MAX_PER_ROUND)
+
+
+class StickerSniffTest(unittest.TestCase):
+    """自动收藏：只收真正的图片，JSON 错误体/HTML 一律丢弃。"""
+
+    def test_sniff_formats(self):
+        from src import sticker_duel
+
+        cases = [
+            (b"\xff\xd8\xff\xe0\x00\x10JFIF", "jpg"),
+            (b"\x89PNG\r\n\x1a\n" + b"\x00" * 8, "png"),
+            (b"GIF89a" + b"\x00" * 8, "gif"),
+            (b"RIFF\x00\x00\x00\x00WEBPVP8 ", "webp"),
+        ]
+        for data, want in cases:
+            self.assertEqual(sticker_duel.sniff_ext(data), want, want)
+
+    def test_rejects_non_image(self):
+        from src import sticker_duel
+
+        for data in (b'{"code":-1,"message":"expired"}', b"<html></html>", b""):
+            self.assertEqual(sticker_duel.sniff_ext(data), "")
+
+
+class DiaryStoreTest(unittest.TestCase):
+    """日记按「场景 × 人设」隔离，一天一篇，可删。"""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path as _P
+
+        from src import diary
+
+        self.d = diary
+        self.tmp = _P(tempfile.mkdtemp(prefix="qai-diary-"))
+        self._orig = diary.DATA_FILE
+        diary.DATA_FILE = self.tmp / "diary.json"
+        diary.reload()
+
+    def tearDown(self):
+        import shutil
+
+        self.d.DATA_FILE = self._orig
+        self.d.reload()
+        shutil.rmtree(getattr(self, "tmp"), ignore_errors=True)
+
+    def test_key_isolation(self):
+        k1 = self.d.diary_key(True, 100, "persona_a")
+        k2 = self.d.diary_key(True, 100, "persona_b")
+        k3 = self.d.diary_key(True, 200, "persona_a")
+        self.assertEqual(len({k1, k2, k3}), 3, "场景或人设不同就是不同的本子")
+
+    def test_split_key_roundtrip(self):
+        key = self.d.diary_key(False, 42, "example")
+        scene, sid, pid = self.d.split_key(key)
+        self.assertEqual((scene, sid, pid), ("private", 42, "example"))
+
+    def test_one_entry_per_day(self):
+        self.d.write(True, 1, "p", "第一版", date="2026-10-30")
+        self.d.write(True, 1, "p", "第二版", date="2026-10-30")
+        items = self.d.list_entries(True, 1, "p")
+        self.assertEqual(len(items), 1, "同一天只保留一版")
+        self.assertEqual(items[0]["text"], "第二版")
+
+    def test_different_days_accumulate(self):
+        self.d.write(True, 1, "p", "a", date="2026-10-29")
+        self.d.write(True, 1, "p", "b", date="2026-10-30")
+        self.assertEqual(len(self.d.list_entries(True, 1, "p")), 2)
+
+    def test_delete_one_day_and_all(self):
+        self.d.write(True, 1, "p", "a", date="2026-10-29")
+        self.d.write(True, 1, "p", "b", date="2026-10-30")
+        self.assertEqual(self.d.delete(True, 1, "p", "2026-10-29"), 1)
+        self.assertEqual(len(self.d.list_entries(True, 1, "p")), 1)
+        self.assertEqual(self.d.delete(True, 1, "p"), 1)
+        self.assertEqual(self.d.list_entries(True, 1, "p"), [])
+
+    def test_empty_text_rejected(self):
+        with self.assertRaises(ValueError):
+            self.d.write(True, 1, "p", "   ")
+
+    def test_newest_first(self):
+        for day in ("2026-10-28", "2026-10-30", "2026-10-29"):
+            self.d.write(True, 1, "p", day, date=day)
+        dates = [e["date"] for e in self.d.list_entries(True, 1, "p")]
+        self.assertEqual(dates, ["2026-10-30", "2026-10-29", "2026-10-28"])
+
+    def test_all_keys_reports_scene_and_persona(self):
+        self.d.write(True, 11, "persona_a", "a", persona_name="示例角色", date="2026-10-30")
+        self.d.write(False, 22, "persona_b", "b", persona_name="示例角色", date="2026-10-30")
+        keys = self.d.all_keys()
+        self.assertEqual(len(keys), 2)
+        names = {k["persona_name"] for k in keys}
+        self.assertEqual(names, {"示例角色", "示例角色"})
+
+
 if __name__ == "__main__":
     unittest.main()

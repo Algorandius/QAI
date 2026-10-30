@@ -12,7 +12,7 @@ import asyncio
 from nonebot import get_driver, logger
 from nonebot.adapters.onebot.v11 import Bot
 
-from src import maintenance
+from src import diary_auto, maintenance
 from src.config import env_set
 
 ADMIN_QQS = env_set("BOT_ADMIN_QQ")
@@ -46,8 +46,14 @@ async def _on_connect(bot: Bot) -> None:
 
 @driver.on_startup
 async def _start_maintenance() -> None:
-    """NoneBot 启动后拉起后台清理任务（过期对话/长期记忆/日志）。"""
+    """NoneBot 启动后拉起后台任务（过期清理、每日日记）。"""
     maintenance.start()
+    # 日记要调模型，把 ai_chat 的 call_llm 传进去，避免它反向 import 插件
+    try:
+        from src.plugins.ai_chat import call_llm as _call_llm
+        diary_auto.start(_call_llm)
+    except Exception as e:
+        logger.warning(f"[lifecycle] 日记定时任务未启动: {type(e).__name__}: {e}")
 
 
 async def _announce(bot: Bot) -> None:

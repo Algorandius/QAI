@@ -138,19 +138,6 @@ def load_index() -> list[dict]:
     return out
 
 
-def load_index() -> list[dict]:
-    if not INDEX_FILE.exists():
-        return []
-    try:
-        data = json.loads(INDEX_FILE.read_text(encoding="utf-8"))
-    except Exception as e:
-        logger.warning(f"[sticker] 读取索引失败: {e}")
-        return []
-    if not isinstance(data, list):
-        return []
-    return [d for d in data if isinstance(d, dict) and d.get("file")]
-
-
 def save_index(items: list[dict]) -> None:
     try:
         tmp = INDEX_FILE.with_suffix(".tmp")
@@ -302,3 +289,108 @@ def pick(mood_tags: list[str], sublib: str = "") -> Path | None:
         except OSError:
             continue
     return fallback
+
+
+# ---------------------------------------------------------------- 增量收藏
+def add_item(filename: str, tags: list[str], url: str = "") -> bool:
+    """把一张表情加进索引；已存在则合并标签。返回是否新增。
+
+    和 build_sticker_library 的区别：那个是整库重建（覆盖），
+    这个是单条增量，用于「聊天中看到别人发的图，直接收进来」。
+    """
+    filename = str(filename or "").strip()
+    if not filename:
+        return False
+    new_tags = [str(t).strip() for t in (tags or []) if str(t).strip()][:8]
+    items = load_index()
+    for it in items:
+        if it.get("file") == filename:
+            merged = list(dict.fromkeys(list(it.get("tags") or []) + new_tags))
+            if merged != it.get("tags"):
+                it["tags"] = merged
+                save_index(items)
+            return False
+    items.append({"file": filename, "tags": new_tags, **({"url": url} if url else {})})
+    save_index(items)
+    return True
+
+
+def has_url(url: str) -> bool:
+    """这条 URL 是不是已经收过了（避免重复下载同一张图）。"""
+    if not url:
+        return False
+    return any(it.get("url") == url for it in load_index())
+
+
+def by_url(url: str) -> dict | None:
+    for it in load_index():
+        if it.get("url") == url:
+            return it
+    return None
+
+
+def pick_random(sublib: str = "") -> Path | None:
+    """随机挑一张（斗图模式用；不挑情绪，要的就是图多）。"""
+    items = load_index()
+    if sublib:
+        sublib = str(sublib).strip()
+        if sublib in load_sublibs():
+            items = [it for it in items if sublib in item_sublibs(it)]
+    if not items:
+        return None
+    random.shuffle(items)
+    for it in items:
+        p = LIB_DIR / it["file"]
+        try:
+            if p.exists() and p.stat().st_size <= _MAX_SEND_BYTES:
+                return p
+        except OSError:
+            continue
+    return None
+
+
+def pick_excluding(sent: set[str], sublib: str = "", strict: bool = True) -> Path | None:
+    """挑一张不在 sent 里的表情。
+
+    strict=True（默认）：排干净后没得挑就返回 None，让调用方少发一张。
+    斗图时"同一张连发"比"少发一张"更糟，所以宁可少发。
+    strict=False：没得挑就退回全集（普通发图场景用）。
+    """
+    items = load_index()
+    if sublib:
+        sublib = str(sublib).strip()
+        if sublib in load_sublibs():
+            items = [it for it in items if sublib in item_sublibs(it)]
+    pool = [it for it in items if it.get("file") not in sent]
+    if not pool:
+        if strict:
+            return None
+        pool = items
+    if not pool:
+        return None
+    random.shuffle(pool)
+    for it in pool:
+        p = LIB_DIR / it["file"]
+        try:
+            if p.exists() and p.stat().st_size <= _MAX_SEND_BYTES:
+                return p
+        except OSError:
+            continue
+    return None
+
+
+async def fetch_custom_faces(bot, count: int = 50) -> list[str]:
+    """取机器人账号「QQ 收藏表情」的 URL 列表（NapCat 扩展接口 fetch_custom_face）。
+
+    NapCat 返回字符串数组；不同版本可能包在 data/urls 里，一并兼容。
+    """
+    try:
+        data = await bot.call_api("fetch_custom_face", count=count)
+    except Exception as e:
+        logger.warning(f"[sticker] 获取收藏表情失败: {e}")
+        return []
+    if isinstance(data, dict):
+        data = data.get("data") or data.get("urls") or []
+    if not isinstance(data, list):
+        return []
+    return [u for u in data if isinstance(u, str) and u]

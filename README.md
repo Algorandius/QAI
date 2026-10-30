@@ -9,12 +9,12 @@
 NapCat + NoneBot2 + OneBot v11  
 不用装 Python，不用改配置文件，不用开命令行
 
-[**下载 QAI 1.2.0**](https://github.com/Algorandius/QAI/releases/latest) ·
+[**下载 QAI 1.3.0**](https://github.com/Algorandius/QAI/releases/latest) ·
 [使用教程](新手教程.md) ·
 [问题反馈](https://github.com/Algorandius/QAI/issues)
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)
-![Version](https://img.shields.io/badge/version-1.2.0-6C5CE7)
+![Version](https://img.shields.io/badge/version-1.3.0-6C5CE7)
 ![License](https://img.shields.io/badge/license-MIT-2ECC71)
 
 </div>
@@ -33,20 +33,20 @@ QAI 把 QQ 机器人需要的东西放进了一个桌面应用里：
 
 打开一个窗口，就能完成从安装到聊天的全过程。
 
-## 1.2.0 新功能
+## 1.3.0 新功能
 
-- **在线更新**：右键版本号检查更新，只下载 850KB 的更新包，聊天记录、人设、记忆和 Key 都保留。GitHub 打不开时还能用「从本地文件更新」。
-- **一键安装器**：`QAI-Setup-1.2.0.exe` 把整个安装包内置在 exe 里，双击就装、**全程不联网**，发给朋友也只需要这一个文件。
-- **各厂商 Key 分开测试**：填完可以点「测试」，几秒内告诉你这个 Key 能不能用、报什么错。
-- **数据备份**：一键导出/导入 `data/`，换电脑或重装前先备份。
-- **后台运行**：关窗口时可以选「后台运行」，机器人继续在线，右下角托盘图标双击就能把界面叫回来。
-- **安全加固**：网页接口加了同源 + 令牌校验，别人没法再借网页往你电脑上装东西。
+- **日记**：每个群、每个人设各写一本，口吻跟人设完全一致。每天 23:30 自动写，管理台能翻看全部。
+- **斗图模式**：`/开启斗图模式` 后有人发表情包它就回一张，不花钱；不会连着发重复的。
+- **自动收表情**：群里有人发表情包就自动收进本地库，按标签整理。
+- **消息增强**：已读标记、正在输入、表情回应（👍😂👏）、历史消息接续、合并转发。
+- **管理台「指令」栏目**：自动列出全部 30 个指令，可搜索、可复制，以后加命令自动更新。
+- **修了识图**：之前有个配置读取的 bug，导致识图等 25 个功能其实是关着的。现在真的能看图了。
 
 ## 三步开始
 
 ### 1. 下载并打开
 
-到 [Releases](https://github.com/Algorandius/QAI/releases/latest) 下载 **`QAI-Setup-1.2.0.exe`**（约 21 MB），双击 → 选个目录 → 剩下的自动完成（校验 → 解压 → 建桌面快捷方式 → 启动）。
+到 [Releases](https://github.com/Algorandius/QAI/releases/latest) 下载 **`QAI-Setup-1.3.0.exe`**（约 21 MB），双击 → 选个目录 → 剩下的自动完成（校验 → 解压 → 建桌面快捷方式 → 启动）。
 
 安装包已经内置在这个 exe 里，**安装过程不需要联网**，所以也可以直接把它发给别人，一个文件就能装好。
 

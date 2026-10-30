@@ -850,3 +850,85 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
   .footer { flex-direction: column; }
   .quick-actions { grid-template-columns: 1fr; }
 }
+
+/* ---------- 指令页 ---------- */
+.cmd-search {
+  width: 200px; padding: 7px 10px; font-size: 12.5px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
+  color: var(--text); outline: none;
+}
+.cmd-search:focus { border-color: var(--accent); }
+.cmd-list { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
+.cmd-group-head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  padding: 0 2px 7px; border-bottom: 1px solid var(--line-soft);
+}
+.cmd-group-head b { font-size: 13px; color: var(--text); }
+.cmd-group-head .muted { font-size: 11.5px; }
+.cmd-rows { display: flex; flex-direction: column; }
+.cmd-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 9px 2px; border-bottom: 1px solid var(--line-soft);
+}
+.cmd-row:last-child { border-bottom: 0; }
+.cmd-name {
+  flex: 0 0 150px; font-size: 12.5px; color: var(--accent-2);
+  background: rgba(77, 163, 255, .08); border-radius: 6px;
+  padding: 2px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmd-body { flex: 1 1 auto; min-width: 0; }
+.cmd-desc { font-size: 12.5px; color: var(--text-2); line-height: 1.55; }
+.cmd-alias { margin-top: 3px; font-size: 11px; color: var(--muted); }
+.cmd-alias code {
+  background: var(--panel-2); border-radius: 5px; padding: 1px 5px; margin-right: 4px;
+  font-size: 11px; color: var(--text-2);
+}
+.cmd-copy { flex: 0 0 auto; opacity: .65; }
+.cmd-copy:hover { opacity: 1; }
+
+@media (max-width: 620px) {
+  .cmd-search { width: 100%; }
+  .cmd-row { flex-wrap: wrap; gap: 6px; }
+  .cmd-name { flex: 0 0 auto; }
+  .cmd-body { flex: 1 1 100%; order: 2; }
+  .cmd-copy { order: 3; margin-left: auto; }
+}
+
+/* ---------- 日记页 ---------- */
+.diary-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; margin-top: 12px; }
+.diary-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.diary-search { width: 100%; }
+.diary-keys { display: flex; flex-direction: column; gap: 5px; max-height: 420px; overflow-y: auto; }
+.diary-key {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; width: 100%;
+  padding: 9px 11px; border-radius: 9px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+  transition: border-color .15s ease, background .15s ease;
+}
+.diary-key:hover { border-color: var(--accent); }
+.diary-key.active { border-color: var(--accent); background: rgba(77, 163, 255, .1); }
+.diary-key-name { font-size: 12.5px; font-weight: 600; }
+.diary-key-meta { font-size: 10.5px; color: var(--muted); }
+
+.diary-pending { border-top: 1px solid var(--line-soft); padding-top: 9px; }
+.diary-pending-title { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+.diary-pending-list { display: flex; flex-direction: column; gap: 3px; }
+.diary-pending-item { font-size: 11.5px; color: var(--text-2); padding: 3px 2px; }
+
+.diary-main { min-width: 0; }
+.diary-entry {
+  padding: 13px 15px; margin-bottom: 11px; border-radius: 11px;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.diary-entry-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin-bottom: 8px;
+}
+.diary-entry-head b { font-size: 12.5px; color: var(--accent-2); }
+.diary-entry-head .muted { font-size: 10.5px; }
+.diary-entry-body { font-size: 13px; line-height: 1.85; color: var(--text-2); }
+
+@media (max-width: 980px) {
+  .diary-layout { grid-template-columns: 1fr; }
+  .diary-keys { max-height: 220px; }
+}

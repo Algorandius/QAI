@@ -38,7 +38,11 @@ def env_float(key: str, default: float = 0.0) -> float:
 
 
 def env_bool(key: str, default: bool = False) -> bool:
-    return env(key, "false").strip().lower() in ("1", "true", "yes", "on")
+    """读布尔开关。键不存在时用 default；之前写死 "false" 会让默认 True 全部失效。"""
+    raw = env(key, "").strip().lower()
+    if not raw:
+        return bool(default)
+    return raw in ("1", "true", "yes", "on")
 
 
 def env_set(key: str) -> set[str]:

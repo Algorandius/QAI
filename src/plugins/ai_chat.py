@@ -31,7 +31,20 @@ from src.config import ROOT, env, env_bool, env_float, env_int, env_set
 from src.stats import STATS
 
 # ---------------- 配置 ----------------
-from src import image_search, longterm, maintenance, memory, personas, sticker_lib, web_tools
+from src import (
+    diary,
+    diary_auto,
+    diary_gen,
+    image_search,
+    longterm,
+    maintenance,
+    memory,
+    msg_plus,
+    personas,
+    sticker_duel,
+    sticker_lib,
+    web_tools,
+)
 
 ADMIN_QQS = env_set("BOT_ADMIN_QQ")
 ALLOWED_GROUPS = env_set("ALLOWED_GROUPS")
@@ -328,6 +341,23 @@ async def send_sticker_url(bot: Bot, event: MessageEvent, url: str) -> bool:
         return False
 
 
+async def _send_photo_url(bot: Bot, event: MessageEvent, url: str) -> bool:
+    """发送一张网络图片（搜图结果）。
+
+    刻意不带 sub_type=1：搜来的是照片/插画，应当显示成普通图片，
+    而不是被 QQ 当成表情包缩成一小张贴纸。
+    """
+    if not str(url or "").startswith(("http://", "https://")):
+        return False
+    try:
+        await bot.send(event, MessageSegment.image(url))
+        logger.info(f"[image] 已发图（远程）{url[:80]}")
+        return True
+    except Exception as e:
+        logger.warning(f"[image] 远程图片发送失败 {type(e).__name__}: {e}")
+        return False
+
+
 def split_sentences(text: str, limit: int = 60) -> list[str]:
     """把回复拆成多条短消息，模拟真人一句一句连发。
 
@@ -539,20 +569,12 @@ MEMORY_REMOVE_TOOL = "memory_remove"
 
 
 async def fetch_custom_faces(bot: Bot, count: int = 50) -> list[str]:
-    """取机器人账号「QQ 收藏表情」的 URL 列表（NapCat 扩展接口 fetch_custom_face）。
+    """取机器人账号「QQ 收藏表情」的 URL 列表。
 
-    NapCat 返回的是字符串数组（表情 URL），可直接交给 MessageSegment.image 发送。
+    实现放在 sticker_lib，和「/收图」「自动收藏」共用同一份，
+    避免两处逻辑各改一半。
     """
-    try:
-        data = await bot.call_api("fetch_custom_face", count=count)
-    except Exception as e:
-        logger.warning(f"[sticker] 获取收藏表情失败: {e}")
-        return []
-    if isinstance(data, dict):
-        data = data.get("data") or data.get("urls") or []
-    if not isinstance(data, list):
-        return []
-    return [u for u in data if isinstance(u, str) and u]
+    return await sticker_lib.fetch_custom_faces(bot, count=count)
 
 
 async def _download_sticker(url: str) -> tuple[bytes, str] | None:
@@ -1019,32 +1041,82 @@ async def chat_with_image_tool(
 
 
 # ---------------------------------------------------------------- 图片识图（多模态）
+_IMG_MAGIC = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"RIFF", "image/webp"),
+)
+
+
+def _sniff_image_mime(data: bytes) -> str:
+    """用文件头判断真实类型；认不出就返回空串。
+
+    QQ 的图片 CDN 在 rkey 过期时会返回 200 + JSON 错误体，
+    Content-Type 还可能是 text/plain 或缺失。只信响应头会把
+    JSON 当图片发出去，模型侧直接 400，整条回复都发不出来。
+    """
+    for magic, mime in _IMG_MAGIC:
+        if data.startswith(magic):
+            if mime == "image/webp" and data[8:12] != b"WEBP":
+                continue
+            return mime
+    return ""
+
+
 async def image_to_data_url(url: str, max_bytes: int = 8 * 1024 * 1024) -> str | None:
     """把图片下载下来转成 base64 data URL。
 
-    DeepSeek 支持直接传外部 URL，但 QQ 图片链接常带鉴权参数 / 防盗链，
-    让 DeepSeek 服务器去拉经常失败（一失败整条请求会 400，连话都答不上来）。
-    所以稳妥做法是我们自己下载，再以内联 data URL 发出去。
-    失败就返回 None 跳过这张图（模型仍能看到 "[图片:xx]" 的文字描述，不会漏掉语义）。
+    QQ 图片链接带 rkey 鉴权，让模型厂商去拉经常失败（一失败整条请求 400，
+    连话都答不上来）。所以自己下载后以内联 data URL 发出去。
+    失败返回 None 跳过这张图（模型仍能看到 "[图片:xx]" 的文字描述）。
     """
+    if not str(url or "").startswith("http"):
+        return None
     try:
         async with httpx.AsyncClient(timeout=20, follow_redirects=True) as c:
             r = await c.get(url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NapCat/QQBot",
                 "Referer": "https://qpic.cn/",
             })
-            r.raise_for_status()
-        data = r.content
-        if len(data) > max_bytes:
-            logger.warning(f"[vision] 图片超过 {max_bytes // 1024 // 1024}MB，跳过: {url[:60]}")
+        if r.status_code != 200:
+            logger.warning(f"[vision] 图片 HTTP {r.status_code}，跳过: {url[:80]}")
             return None
-        mime = (r.headers.get("Content-Type") or "").split(";")[0].strip()
-        if mime not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
-            mime = "image/jpeg"
+        data = r.content
+        if not data:
+            logger.warning(f"[vision] 图片内容为空，跳过: {url[:80]}")
+            return None
+        if len(data) > max_bytes:
+            logger.warning(f"[vision] 图片超过 {max_bytes // 1024 // 1024}MB，跳过: {url[:80]}")
+            return None
+        # 先按文件头判断；认不出再看 Content-Type，都不像图就放弃
+        mime = _sniff_image_mime(data)
+        if not mime:
+            head = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if head in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+                mime = head
+        if not mime:
+            preview = data[:80].decode("utf-8", "replace").replace("\n", " ")
+            logger.warning(f"[vision] 返回的不是图片（{len(data)} 字节），跳过: {preview}")
+            return None
         return f"data:{mime};base64,{base64.b64encode(data).decode('utf-8')}"
     except Exception as e:
-        logger.warning(f"[vision] 图片下载失败，跳过该图: {e}")
+        logger.warning(f"[vision] 图片下载失败，跳过该图: {type(e).__name__}: {e}")
         return None
+
+
+# ---------------------------------------------------------------- 轻量互动
+async def _light_reactions(bot: Bot, event, text: str, is_group: bool) -> None:
+    """已读 + 表情回应。独立任务，任何失败都不影响正常回复。"""
+    try:
+        mid = getattr(event, "message_id", 0)
+        await msg_plus.mark_read(bot, mid)
+        kind = msg_plus.pick_react_kind(text)
+        if kind and random.random() < msg_plus.MSG_EMOJI_LIKE_PROB:
+            await msg_plus.react(bot, mid, kind)
+    except Exception as e:
+        logger.debug(f"[msg+] 轻量互动失败: {type(e).__name__}: {e}")
 
 
 # ---------------------------------------------------------------- 心情系统
@@ -1214,6 +1286,51 @@ def is_politics(text: str) -> bool:
     return any(w in text for w in _POLITICS_WORDS)
 
 
+def self_id_is_other(event, bot) -> bool:
+    """这条消息不是机器人自己发的。避免它把自己的图又收一遍、自己跟自己斗图。"""
+    try:
+        return str(getattr(event, "user_id", "")) != str(getattr(bot, "self_id", ""))
+    except Exception:
+        return True
+
+
+async def _duel_reply(bot: Bot, event, scene_id: int) -> bool:
+    """斗图模式：回一到几张表情包，不走模型。返回是否真的发了。
+
+    两个细节：
+      · 必须用 sticker_segment（sub_type=1），否则 QQ 会显示成普通图片而不是贴纸
+      · 发过的图记进场景历史，下一轮优先不重复
+    """
+    try:
+        sent: set[str] = set()
+        rounds = sticker_duel.duel_round_size()
+        for i in range(rounds):
+            if i:
+                await asyncio.sleep(random.uniform(*sticker_duel.DUEL_GAP))
+            path = sticker_duel.pick_duel_sticker(scene_id, sent)
+            if not path:
+                if i == 0:
+                    # 一张都没挑到：要么库空，要么库里能发的都发过了
+                    if sticker_lib.count() == 0:
+                        await bot.send(event, "我库里还没表情包，先发几张给我收藏？（或者让管理员跑 /建表情库）")
+                    else:
+                        await bot.send(event, "我的表情包都发过一遍了，等我再收几张～")
+                break
+            try:
+                await bot.send(event, sticker_segment(path.read_bytes()))
+            except Exception as e:
+                logger.warning(f"[duel] 发送失败 {type(e).__name__}: {e}")
+                break
+            sent.add(path.name)
+            sticker_duel.note_sent(scene_id, path.name)
+            sticker_duel.duel_touch(scene_id)
+            STATS["sent"] += 1
+        return bool(sent)
+    except Exception as e:
+        logger.warning(f"[duel] 斗图异常 {type(e).__name__}: {e}")
+        return False
+
+
 # ---------------- 主处理 ----------------
 ai = on_message(priority=90, block=False)
 
@@ -1224,6 +1341,21 @@ async def _(bot: Bot, event: MessageEvent):
     text, images, user_media = message_to_text(event.message)
     text = text.strip()
     STATS["recv"] += 1          # 面板"收到消息"一直显示 0，就是这里从来没计过
+
+    # —— 斗图模式 / 自动收图 ——
+    # 这两件事要在「text 为空」判断之前做：纯表情包消息的 text 是 "[表情包]"
+    # 这种占位符，但它的 URL 在 user_media 里，正好就是要收的东西。
+    _scene = event.group_id if isinstance(event, GroupMessageEvent) else event.user_id
+    sticker_urls = [m["url"] for m in user_media
+                    if m.get("kind") in ("sticker", "image") and m.get("url")]
+    if sticker_urls and self_id_is_other(event, bot):
+        asyncio.create_task(sticker_duel.collect_background(sticker_urls))
+    if sticker_duel.duel_enabled(_scene) and sticker_urls:
+        if sticker_duel.duel_ready(_scene):
+            handled = await _duel_reply(bot, event, _scene)
+            if handled:
+                return
+
     if not text:
         return
     # 命令消息交给 basic.py 处理
@@ -1364,6 +1496,19 @@ async def _(bot: Bot, event: MessageEvent):
         return
 
     ctx = GROUP_CTX[scene_id] if is_group else PRIVATE_CTX[scene_id]
+    # 冷启动：刚启动 / 长时间没聊过时，上下文是空的，机器人会像失忆。
+    # 主动拉最近的历史消息补上，让它知道刚才大家在聊什么。
+    if not ctx and msg_plus.MSG_HISTORY_BACKFILL:
+        try:
+            backfill = await msg_plus.fetch_history(bot, is_group, scene_id)
+            if backfill:
+                with memory.STATE_LOCK:
+                    for e2 in backfill[:-1]:        # 最后一条就是当前这句，不重复插
+                        ctx.append({"role": e2["role"], "content": e2["content"],
+                                    "mid": e2.get("mid"), "ts": e2.get("ts") or time.time()})
+                logger.info(f"[msg+] 已补入 {len(backfill) - 1} 条历史消息作为上下文")
+        except Exception as e:
+            logger.debug(f"[msg+] 补历史失败: {type(e).__name__}: {e}")
     # 好感度：先更新（越聊越熟、被夸涨、被骂掉），再注入语气
     aff = update_affinity(scene_id, event.user_id, nick, text)
     # 根据这条消息更新心情，后续会注入语气提示
@@ -1520,11 +1665,18 @@ async def _(bot: Bot, event: MessageEvent):
             data_url = await image_to_data_url(u)
             if data_url:
                 vision_parts.append({"type": "image_url", "image_url": {"url": data_url}})
-        if len(vision_parts) > 1:      # 只有成功内联了图才走多模态格式
+        if len(vision_parts) > 1:
             content = vision_parts
+        else:
+            # 一张都没拿到：告诉模型"图没看到"，免得它照着 [图片:xx] 硬编内容
+            logger.info("[vision] 本轮图片全部获取失败，退化为纯文本")
+            content = quote_note + text + "\n（对方发了图片，但我这边没能加载出来，看不到内容）"
     messages.append({"role": "user", "content": content})
 
     STATS["ai_calls"] += 1
+    # 让对面看到"正在输入"。这一步会真的花时间（模型思考），所以有意义。
+    _typing_target = event.group_id if is_group else event.user_id
+    asyncio.create_task(msg_plus.set_typing(bot, is_group, _typing_target, seconds=0))
     pending_images: list = []             # 模型决定要发的图/表情，等文字说完再发
     # —— 图片与收藏表情各自独立放行，互不拖累 ——
     allow_search = False
@@ -1617,6 +1769,8 @@ async def _(bot: Bot, event: MessageEvent):
         chunks = chunks[:AI_MAX_MSGS - 1] + ["".join(chunks[AI_MAX_MSGS - 1:])]
 
     face_sent = False       # 本轮是否已发过 QQ 小黄脸（避免和表情包叠加成两个表情）
+    # 已读 + 表情回应：都在后台跑，失败不影响回复
+    asyncio.create_task(_light_reactions(bot, event, text, is_group))
     if HUMANIZE:
         # 1) 先"看到消息 → 想一下"，避免秒回
         await asyncio.sleep(random.uniform(THINK_MIN, THINK_MAX))
@@ -1646,10 +1800,15 @@ async def _(bot: Bot, event: MessageEvent):
             if random.random() < AI_STICKER_PROB:
                 fid = pick_sticker(MOOD.get(scene_id, 0.0))
                 await asyncio.sleep(random.uniform(GAP_MIN, GAP_MAX))
-                await bot.send(event, MessageSegment.face(fid))
-                LAST_STICKER[scene_id] = now
-                face_sent = True
-                STATS["sent"] += 1
+                # 补表情是"锦上添花"，发不出去（如 retcode 1200 消息体无法解析）
+                # 不能让整轮回复失败——用户那边已经看到文字了，这里吞掉异常即可
+                try:
+                    await bot.send(event, MessageSegment.face(fid))
+                    LAST_STICKER[scene_id] = now
+                    face_sent = True
+                    STATS["sent"] += 1
+                except Exception as e:
+                    logger.warning(f"[sticker] 表情 {fid} 发送失败，跳过本轮补表情: {e}")
     else:
         if answer.strip():
             msg = build_message(answer)
@@ -1662,7 +1821,8 @@ async def _(bot: Bot, event: MessageEvent):
     if image_query and image_search.enabled() and len(pending_images) < AI_IMAGE_MAX_PER_TURN:
         data = await image_search.fetch_image(image_query)
         if data:
-            pending_images.append(data)
+            # 搜来的是照片/插画，不是表情包：打标记，发送时保持普通图片
+            pending_images.append(("photo", data))
         else:
             await bot.send(event, "没搜到图 换个词试试")
 
@@ -1671,13 +1831,21 @@ async def _(bot: Bot, event: MessageEvent):
     bot_media: list[dict] = []
     for item in pending_images[:AI_IMAGE_MAX_PER_TURN]:
         await asyncio.sleep(random.uniform(1.0, 2.0))
+        # 搜图搜来的是"图片"（照片、插画），本地库/收藏是"表情"，两者发法不同：
+        # 表情要 sub_type=1，图片保持原样，否则表情会被显示成一张可点开的大图。
+        is_photo = isinstance(item, tuple) and item[0] == "photo"
+        if is_photo:
+            item = item[1]
         if isinstance(item, str):
             if item.startswith(("http://", "https://")):
-                # 没有本地表情库时，工具会把 QQ 收藏表情的 URL 直接塞进 pending；
-                # 这种是网址，不能当本地路径读，必须走 URL 发送分支。
-                ok = await send_sticker_url(bot, event, item)
+                if is_photo:
+                    ok = await _send_photo_url(bot, event, item)
+                else:
+                    # 没有本地表情库时，工具会把 QQ 收藏表情的 URL 直接塞进 pending；
+                    # 这种是网址，不能当本地路径读，必须走 URL 发送分支。
+                    ok = await send_sticker_url(bot, event, item)
                 if ok:
-                    bot_media.append({"kind": "sticker", "url": item})
+                    bot_media.append({"kind": "image" if is_photo else "sticker", "url": item})
             else:
                 # 本地表情文件 → 发成"动画表情"
                 ok = await send_sticker_file(bot, event, Path(item))
@@ -1820,6 +1988,64 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
     lines += longterm.format_entries(items)
     lines.append(f"共 {longterm.count(key)} 条 · 删除：/记忆 删 <编号>")
     await mem_cmd.finish("\n".join(lines))
+
+
+# ---------------------------------------------------------------- 日记
+diary_cmd = on_command("日记", aliases={"diary", "我的日记"}, priority=10, block=True)
+
+
+@diary_cmd.handle()
+async def _(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
+    """查看/补写这个人设在这个场景的日记。"""
+    is_group = isinstance(event, GroupMessageEvent)
+    scene_id = event.group_id if is_group else event.user_id
+    sk = ("group", scene_id) if is_group else ("private", scene_id)
+    pid = personas.resolve(sk)
+    pname = personas.display_name(pid)
+
+    arg = args.extract_plain_text().strip()
+
+    # /日记 写 —— 立刻补写今天的（管理员或私聊，避免群里误触刷模型）
+    if arg.startswith(("写", "补", "生成")):
+        is_admin = str(event.user_id) in ADMIN_QQS
+        if not is_admin and (ADMIN_QQS or is_group):
+            await diary_cmd.finish("补写日记要管理员操作，或在私聊里发 /日记 写")
+        await diary_cmd.send(f"正在用「{pname}」的口吻写今天的日记，稍等…")
+        entry = await diary_gen.generate(scene_id, is_group, pid, call_llm, force=True)
+        if not entry:
+            await diary_cmd.finish("没写成：要么今天对话太少，要么模型没给出可用内容。")
+        await diary_cmd.finish(
+            f"【{pname} · {entry['date']}】\n{entry['text']}\n"
+            f"（{entry['turns']} 条对话素材）"
+        )
+
+    # /日记 删 [日期] —— 删当天或整本
+    if arg.startswith(("删", "清空")):
+        is_admin = str(event.user_id) in ADMIN_QQS
+        if not is_admin and (ADMIN_QQS or is_group):
+            await diary_cmd.finish("删日记要管理员操作，或在私聊里发 /日记 删")
+        m = re.search(r"\d{4}-\d{2}-\d{2}", arg)
+        n = diary.delete(is_group, scene_id, pid, m.group() if m else "")
+        if not n:
+            await diary_cmd.finish("没有可删的日记。")
+        await diary_cmd.finish(f"删掉 {n} 篇。" if m else f"整本删掉了（{n} 篇）。")
+
+    # 默认：看最近几篇
+    entries = diary.list_entries(is_group, scene_id, pid, limit=3)
+    if not entries:
+        await diary_cmd.finish(
+            f"「{pname}」在这里还没有日记。\n"
+            f"每天 {diary_auto.DIARY_HOUR:02d}:{diary_auto.DIARY_MINUTE:02d} 会自动写；"
+            f"也可以发 /日记 写 立刻补一篇。"
+        )
+    lines = [f"【{pname} 的日记 · 最近 {len(entries)} 篇】"]
+    for e in entries:
+        head = e.get("date") or ""
+        tail = f"（{e.get('turns', 0)} 条素材）" if e.get("turns") else ""
+        lines.append(f"\n{head}{tail}\n{e.get('text') or ''}")
+    total = len(diary.list_entries(is_group, scene_id, pid))
+    lines.append(f"\n共 {total} 篇 · 面板「日记」可看全部")
+    await diary_cmd.finish("\n".join(lines))
 
 
 # ---------------------------------------------------------------- 手动清理过期记忆
