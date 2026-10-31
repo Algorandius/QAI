@@ -13,7 +13,7 @@
 {
   "version": 1,
   "scenes": {
-    "group:1015171785": {
+    "group:123456": {
       "next_id": 4,
       "items": [
         {"id": 3, "ts": 1730..., "date": "2026-10-22",

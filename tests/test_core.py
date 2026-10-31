@@ -736,9 +736,9 @@ class DiaryStoreTest(unittest.TestCase):
         shutil.rmtree(getattr(self, "tmp"), ignore_errors=True)
 
     def test_key_isolation(self):
-        k1 = self.d.diary_key(True, 100, "xilian")
-        k2 = self.d.diary_key(True, 100, "dayuyu")
-        k3 = self.d.diary_key(True, 200, "xilian")
+        k1 = self.d.diary_key(True, 100, "persona_a")
+        k2 = self.d.diary_key(True, 100, "persona_b")
+        k3 = self.d.diary_key(True, 200, "persona_a")
         self.assertEqual(len({k1, k2, k3}), 3, "场景或人设不同就是不同的本子")
 
     def test_split_key_roundtrip(self):
@@ -777,12 +777,12 @@ class DiaryStoreTest(unittest.TestCase):
         self.assertEqual(dates, ["2026-10-30", "2026-10-29", "2026-10-28"])
 
     def test_all_keys_reports_scene_and_persona(self):
-        self.d.write(True, 11, "xilian", "a", persona_name="昔涟", date="2026-10-30")
-        self.d.write(False, 22, "dayuyu", "b", persona_name="大肥鱼", date="2026-10-30")
+        self.d.write(True, 11, "persona_a", "a", persona_name="角色甲", date="2026-10-30")
+        self.d.write(False, 22, "persona_b", "b", persona_name="角色乙", date="2026-10-30")
         keys = self.d.all_keys()
         self.assertEqual(len(keys), 2)
         names = {k["persona_name"] for k in keys}
-        self.assertEqual(names, {"昔涟", "大肥鱼"})
+        self.assertEqual(names, {"角色甲", "角色乙"})
 
 
 if __name__ == "__main__":

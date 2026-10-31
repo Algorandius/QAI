@@ -1,7 +1,7 @@
 """机器人日记：每天按「人设 × 场景」写一篇，口吻跟随人设。
 
 为什么按人设分：
-同一个人在 A 群扮演大肥鱼、在 B 群扮演绘梨衣，两边日记混在一起会精神分裂。
+同一个人在 A 群扮演一个角色、在 B 群扮演另一个，两边日记混在一起会精神分裂。
 所以 key 是 `group:123|persona_id`，跟 memory 的人设隔离方式保持一致。
 
 存储：`data/diary.json`
@@ -9,10 +9,10 @@
 {
   "version": 1,
   "entries": {
-    "group:1015171785|xilian": [
+    "group:123456|persona_a": [
       {"date": "2026-10-30", "ts": 1730..., "text": "今天……",
-       "persona": "xilian", "persona_name": "昔涟",
-       "scene": "group", "scene_id": 1015171785,
+       "persona": "persona_a", "persona_name": "示例角色",
+       "scene": "group", "scene_id": 123456,
        "mood": 2.5, "turns": 87, "people": ["小王", "阿杰"]}
     ]
   }

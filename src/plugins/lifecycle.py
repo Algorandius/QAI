@@ -20,7 +20,7 @@ ALLOWED_GROUPS = env_set("ALLOWED_GROUPS")
 # 回归播报目标群：优先用 AI_WELCOME_GROUPS，没配则用 ALLOWED_GROUPS，都为空则静默
 WELCOME_GROUPS = env_set("AI_WELCOME_GROUPS")
 
-# 绘梨衣说话很短，掉线回来也只是一句
+# 人设说话短的话，掉线回来也只是一句
 WELCOME_MSG = "我回来了"
 
 driver = get_driver()
