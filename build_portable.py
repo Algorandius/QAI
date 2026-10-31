@@ -461,37 +461,49 @@ def verify_build() -> None:
 
 
 # 发布包里绝不允许出现的字样（作者本人的角色名、私人群号等）。
-# 加新条目时一定给通用示例，别把自己写进去。
-PRIVATE_TERMS = (
-    # 作者私人角色的名字与别名
-    "默认人设", "默认人设", "默认人设", "示例角色", "示例角色",
-    # 作者私人角色的目录 id
-    "persona_a", "persona_b", "persona_c",
-    # 作者自己的 QQ 号 / 群号
-    "1000000000", "123456", "123457",
-)
+#
+# 词表本身也是隐私，所以不放仓库里：构建时从 `_private_terms.txt` 读，
+# 那个文件在 .gitignore 里，只有本机有。
+# 格式：每行一个词，# 开头是注释。文件不存在就跳过这项检查。
+#
+# 为什么要做这个检查：作者的 .env 注释和文档示例里常写着自己的角色名，
+# 打包时会被原样发给用户。
+_PRIVATE_TERMS_FILE = ROOT / "_private_terms.txt"
 
-# 脱敏时把命中词换成什么
-_PRIVATE_REPLACEMENT = {
-    "默认人设": "默认人设",
-    "默认人设": "默认人设",
-    "默认人设": "默认人设",
-    "示例角色": "示例角色",
-    "示例角色": "示例角色",
-    "persona_a": "persona_a",
-    "persona_b": "persona_b",
-    "persona_c": "persona_c",
-    "1000000000": "1000000000",
-    "123456": "123456",
-    "123457": "123457",
+# 脱敏时命中词换成什么（按长度给个中性替代，不需要知道原文）
+_NEUTRAL_FOR = {
+    "persona": "示例角色",   # 中文角色名
+    "id": "persona_x",       # 英文 id
+    "qq": "100000000",       # QQ 号
 }
+
+
+def _load_private_terms() -> list[tuple[str, str]]:
+    """读本地词表，返回 [(词, 中性替代)]。"""
+    try:
+        text = _PRIVATE_TERMS_FILE.read_text(encoding="utf-8")
+    except Exception:
+        return []
+    out: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        term = line.split("#", 1)[0].strip()
+        if not term:
+            continue
+        if term.isdigit():
+            repl = _NEUTRAL_FOR["qq"]
+        elif term.isascii():
+            repl = _NEUTRAL_FOR["id"]
+        else:
+            repl = _NEUTRAL_FOR["persona"]
+        out.append((term, repl))
+    return out
 
 
 def _scrub_private_terms(text: str) -> str:
     """把文本里作者的私人字样换成中性说法。"""
-    for term in PRIVATE_TERMS:
+    for term, repl in _load_private_terms():
         if term in text:
-            text = text.replace(term, _PRIVATE_REPLACEMENT.get(term, "示例"))
+            text = text.replace(term, repl)
     return text
 
 # 这些后缀才需要扫描（二进制、缓存不扫）
@@ -502,6 +514,10 @@ _SCAN_SKIP_DIRS = {"data", "logs", "runtime", "assets", "napcat", "__pycache__",
 
 def _scan_private_terms(root: Path) -> None:
     """全文扫描构建产物，命中私人字样就让构建失败。"""
+    terms = _load_private_terms()
+    if not terms:
+        log("没有 _private_terms.txt，跳过私人信息扫描")
+        return
     hits: list[str] = []
     for path in root.rglob("*"):
         if not path.is_file():
@@ -516,11 +532,11 @@ def _scan_private_terms(root: Path) -> None:
             continue
         rel = path.relative_to(root)
         for lineno, line in enumerate(text.splitlines(), 1):
-            for term in PRIVATE_TERMS:
+            for term, _ in terms:
                 if term in line:
-                    # 只打键名和命中的词，不把整行配置倒出来
+                    # 只打键名，不把命中的词和整行配置倒出来
                     key = line.split("=", 1)[0].strip()[:40]
-                    hits.append(f"{rel}:{lineno}  键={key or '(注释)'}  命中={term}")
+                    hits.append(f"{rel}:{lineno}  键={key or '(注释)'}")
                     break
     if hits:
         listing = "\n  ".join(hits[:20])
