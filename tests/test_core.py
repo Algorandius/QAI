@@ -777,12 +777,12 @@ class DiaryStoreTest(unittest.TestCase):
         self.assertEqual(dates, ["2026-10-30", "2026-10-29", "2026-10-28"])
 
     def test_all_keys_reports_scene_and_persona(self):
-        self.d.write(True, 11, "persona_a", "a", persona_name="示例角色", date="2026-10-30")
-        self.d.write(False, 22, "persona_b", "b", persona_name="示例角色", date="2026-10-30")
+        self.d.write(True, 11, "persona_a", "a", persona_name="角色甲", date="2026-10-30")
+        self.d.write(False, 22, "persona_b", "b", persona_name="角色乙", date="2026-10-30")
         keys = self.d.all_keys()
         self.assertEqual(len(keys), 2)
         names = {k["persona_name"] for k in keys}
-        self.assertEqual(names, {"示例角色", "示例角色"})
+        self.assertEqual(names, {"角色甲", "角色乙"})
 
 
 if __name__ == "__main__":

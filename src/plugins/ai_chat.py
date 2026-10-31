@@ -72,10 +72,10 @@ GAP_MIN = env_float("AI_GAP_MIN", 1.8)
 GAP_MAX = max(GAP_MIN, env_float("AI_GAP_MAX", 4.0))
 # 单轮最多连发几条消息（防止模型话痨刷屏）
 AI_MAX_MSGS = max(1, env_int("AI_MAX_MSGS", 5))
-# 单条消息最多几个字，超出就在这里硬切（默认人设人设：一条只发一行、1~8 字，所以默认很小）
+# 单条消息最多几个字，超出就在这里硬切（短句人设：一条只发一行、1~8 字，所以默认值很小）
 AI_MSG_MAX_CHARS = max(8, env_int("AI_MSG_MAX_CHARS", 20))
-# 被叫到这些名字时一定回复（默认人设 / 默认人设 / 默认人设）
-AI_NAME_ALIASES = env_set("AI_NAME_ALIASES") or {"默认人设", "默认人设", "默认人设"}
+# 被叫到这些别名时一定回复。默认空，在 .env 里配 AI_NAME_ALIASES=名字1,名字2
+AI_NAME_ALIASES = env_set("AI_NAME_ALIASES")
 # 政治/时政话题硬拦截（人设要求最高优先级拒绝，程序层再兜一道）
 AI_POLITICS_GUARD = env_bool("AI_POLITICS_GUARD", True)
 # 对方是「引用某条消息」发问时，机器人回话也带上引用
@@ -1147,7 +1147,7 @@ def update_mood(scene_id: int, text: str) -> None:
 
 
 def mood_prompt(val: float) -> tuple[str, str]:
-    """把心情值翻译成给模型的提示（默认人设：情绪低就更安静，不会变凶）。"""
+    """把心情值翻译成给模型的提示（情绪低时更安静，不会变凶）。"""
     if val >= 6:
         return ("很开心", "你今天心情很好，愿意多说一句，会想跟着人走，偶尔主动问「那是什么」。")
     if val >= 2:
@@ -1414,7 +1414,7 @@ async def _(bot: Bot, event: MessageEvent):
         #    并设置 event.to_me = True（原始内容保留在 event.original_message）。
         #    所以判断有没有 @ 我，必须用 is_tome()，不能遍历 event.message。
         mentioned = event.is_tome()
-        # 人设要求：被提到「默认人设 / 默认人设 / 默认人设」也算在叫她，必回
+        # 被提到 .env 里配的别名也算在叫她，必回
         if not mentioned and any(a in text for a in AI_NAME_ALIASES):
             mentioned = True
         auto_trigger = False
@@ -2101,7 +2101,7 @@ async def _(event: MessageEvent, args: Message = CommandArg()):
             desc = f"　{it['desc']}" if it["desc"] else ""
             lines.append(f"· {it['id']} — {it['name']}{desc}{mark}")
         lines.append("")
-        lines.append("切换当前场景：/人格 默认人设　（也可以用中文名；会载入该角色自己的对话记忆）")
+        lines.append("切换当前场景：/人格 <人设名>　（也可以用中文名；会载入该角色自己的对话记忆）")
         await persona_cmd.finish("\n".join(lines))
 
     pid = arg

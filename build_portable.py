@@ -299,6 +299,8 @@ UPDATE_BLOCK = """
 SANITIZE_DEFAULTS = {
     "BOT_ADMIN_QQ": "",
     "ALLOWED_GROUPS": "",
+    # 作者自己角色名的别名列表，绝不能跟着包发出去
+    "AI_NAME_ALIASES": "",
     "NAPCAT_DIR": "",
     "NAPCAT_AUTO_START": "false",
     "LAUNCHER_PORT": "8082",
@@ -357,6 +359,9 @@ def sanitize_env() -> None:
     if "sk-" in out:
         # 注释里也别留下示例 Key
         out = re.sub(r"sk-[A-Za-z0-9_-]{8,}", "sk-***", out)
+    # 作者的 .env 注释里常写着自己的角色名（"某某人设所以给得偏低"）。
+    # 这些注释会原样发给用户，所以在这里统一换成中性说法。
+    out = _scrub_private_terms(out)
     # 补上各厂商 Key 的说明和空槽位，方便用户手改 .env
     if "LLM_KEY_ZHIPU=" not in out:
         out += PROVIDER_KEY_BLOCK
@@ -446,10 +451,84 @@ def verify_build() -> None:
     missing = [name for name in UPDATE_KEY_SLOTS if name not in values]
     if missing:
         raise SystemExit(f"发布包的 .env 里缺少更新源槽位：{missing}")
+    # 作者自己的角色名/群号绝不能跟着包发出去。
+    # 这个检查不看键名，直接全文搜——注释、文档、示例里漏一个也算。
+    _scan_private_terms(BUILD)
     log(
         f"自检通过：人设 {sorted(shipped)}，默认 {DEFAULT_PERSONA}，"
         f"密钥已清空，OneBot Token 每次构建随机生成"
     )
+
+
+# 发布包里绝不允许出现的字样（作者本人的角色名、私人群号等）。
+# 加新条目时一定给通用示例，别把自己写进去。
+PRIVATE_TERMS = (
+    # 作者私人角色的名字与别名
+    "默认人设", "默认人设", "默认人设", "示例角色", "示例角色",
+    # 作者私人角色的目录 id
+    "persona_a", "persona_b", "persona_c",
+    # 作者自己的 QQ 号 / 群号
+    "1000000000", "123456", "123457",
+)
+
+# 脱敏时把命中词换成什么
+_PRIVATE_REPLACEMENT = {
+    "默认人设": "默认人设",
+    "默认人设": "默认人设",
+    "默认人设": "默认人设",
+    "示例角色": "示例角色",
+    "示例角色": "示例角色",
+    "persona_a": "persona_a",
+    "persona_b": "persona_b",
+    "persona_c": "persona_c",
+    "1000000000": "1000000000",
+    "123456": "123456",
+    "123457": "123457",
+}
+
+
+def _scrub_private_terms(text: str) -> str:
+    """把文本里作者的私人字样换成中性说法。"""
+    for term in PRIVATE_TERMS:
+        if term in text:
+            text = text.replace(term, _PRIVATE_REPLACEMENT.get(term, "示例"))
+    return text
+
+# 这些后缀才需要扫描（二进制、缓存不扫）
+_SCAN_SUFFIX = {".py", ".js", ".css", ".html", ".json", ".md", ".txt", ".cs", ".env", ".example"}
+# 用户数据目录不扫：那是运行时生成的，本来就该带用户自己的信息
+_SCAN_SKIP_DIRS = {"data", "logs", "runtime", "assets", "napcat", "__pycache__", ".git"}
+
+
+def _scan_private_terms(root: Path) -> None:
+    """全文扫描构建产物，命中私人字样就让构建失败。"""
+    hits: list[str] = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part in _SCAN_SKIP_DIRS for part in path.relative_to(root).parts):
+            continue
+        if path.suffix.lower() not in _SCAN_SUFFIX:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        rel = path.relative_to(root)
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for term in PRIVATE_TERMS:
+                if term in line:
+                    # 只打键名和命中的词，不把整行配置倒出来
+                    key = line.split("=", 1)[0].strip()[:40]
+                    hits.append(f"{rel}:{lineno}  键={key or '(注释)'}  命中={term}")
+                    break
+    if hits:
+        listing = "\n  ".join(hits[:20])
+        raise SystemExit(
+            "发布包里出现了作者的私人信息，构建中止：\n  "
+            f"{listing}\n"
+            "把这些字样换成通用示例（角色名用「示例角色」，群号用 123456）。"
+        )
 
 
 def build_exe(runtime: Path) -> None:
