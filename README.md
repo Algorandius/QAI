@@ -9,13 +9,15 @@
 NapCat + NoneBot2 + OneBot v11  
 不用装 Python，不用改配置文件，不用开命令行
 
-[**下载 QAI 1.3.0**](https://github.com/Algorandius/QAI/releases/latest) ·
+[**下载 QAI 1.3.1**](https://github.com/Algorandius/QAI/releases/latest) ·
 [使用教程](新手教程.md) ·
 [问题反馈](https://github.com/Algorandius/QAI/issues)
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)
-![Version](https://img.shields.io/badge/version-1.3.0-6C5CE7)
+![Version](https://img.shields.io/badge/version-1.3.1-6C5CE7)
 ![License](https://img.shields.io/badge/license-MIT-2ECC71)
+
+简体中文 · [English](README.en.md)
 
 </div>
 
@@ -33,7 +35,7 @@ QAI 把 QQ 机器人需要的东西放进了一个桌面应用里：
 
 打开一个窗口，就能完成从安装到聊天的全过程。
 
-## 1.3.0 新功能
+## 1.3.1 新功能
 
 - **日记**：每个群、每个人设各写一本，口吻跟人设完全一致。每天 23:30 自动写，管理台能翻看全部。
 - **斗图模式**：`/开启斗图模式` 后有人发表情包它就回一张，不花钱；不会连着发重复的。
@@ -46,7 +48,7 @@ QAI 把 QQ 机器人需要的东西放进了一个桌面应用里：
 
 ### 1. 下载并打开
 
-到 [Releases](https://github.com/Algorandius/QAI/releases/latest) 下载 **`QAI-Setup-1.3.0.exe`**（约 21 MB），双击 → 选个目录 → 剩下的自动完成（校验 → 解压 → 建桌面快捷方式 → 启动）。
+到 [Releases](https://github.com/Algorandius/QAI/releases/latest) 下载 **`QAI-Setup-1.3.1.exe`**（约 21 MB），双击 → 选个目录 → 剩下的自动完成（校验 → 解压 → 建桌面快捷方式 → 启动）。
 
 安装包已经内置在这个 exe 里，**安装过程不需要联网**，所以也可以直接把它发给别人，一个文件就能装好。
 
