@@ -38,7 +38,7 @@ PAYLOAD_NAME = "QAI.payload.zip"
 PAYLOAD_SHA_NAME = "QAI.payload.sha256"
 
 # 构建用的基础 Python：优先环境变量，其次默认位置。
-LEGACY_BASE_PYTHON = Path(r"C:\Users\fy688\.workbuddy\binaries\python\versions\3.13.12")
+LEGACY_BASE_PYTHON = Path(os.environ.get("BUILD_BASE_PYTHON", r"C:\Python313"))
 LOCK_FILE = ROOT / "requirements.lock"
 
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", ".pytest_cache")

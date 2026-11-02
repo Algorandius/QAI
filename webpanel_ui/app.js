@@ -34,6 +34,7 @@ const TAB_META = {
   stickers: ["表情库", "收藏表情与标签管理"],
   diary: ["日记", "每个群、每个人设各写一本日记"],
   commands: ["指令", "机器人支持的聊天指令与别名"],
+  phone: ["手机", "用手机浏览器管理这个机器人"],
   settings: ["设置", "管理员、白名单与 .env 配置"],
 };
 
@@ -166,6 +167,15 @@ function qaiConfirm(message, options = {}) {
 // 写接口令牌：服务端注入到 <meta name="qai-token">，只有同源脚本读得到。
 const API_TOKEN = (document.querySelector('meta[name="qai-token"]') || {}).content || "";
 
+// 远程访问时服务端用 401 表示「尚未登录」，这里统一跳回登录页。
+// 本机访问永远不会走到这个分支（本机免登录）。
+let _loginRedirecting = false;
+function goLogin() {
+  if (_loginRedirecting) return;
+  _loginRedirecting = true;
+  location.replace("/");
+}
+
 async function api(path, options = {}) {
   const opts = { ...options, headers: { ...(options.headers || {}) } };
   if (API_TOKEN) opts.headers["X-QAI-Token"] = API_TOKEN;
@@ -174,6 +184,10 @@ async function api(path, options = {}) {
     opts.headers["Content-Type"] = "application/json";
   }
   const res = await fetch(path, { cache: "no-store", ...opts });
+  if (res.status === 401) {
+    goLogin();
+    throw new Error("登录已过期，请重新登录");
+  }
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = null; }
@@ -236,6 +250,8 @@ function activateTab(name, opts = {}) {
     loadRecent();
   } else if (name === "groups") {
     renderScenes();
+  } else if (name === "phone") {
+    loadPhone();
   } else if (name === "personas") {
     renderPersonas();
   } else if (name === "chatlog") {
@@ -2549,6 +2565,61 @@ function initGuide() {
 }
 
 /* ---------------- 启动 ---------------- */
+function initRemote() {
+  const remote = (document.querySelector('meta[name="qai-remote"]') || {}).content === "1";
+  if (!remote) return;
+  const banner = $("#remoteBanner");
+  const btn = $("#logoutBtn");
+  if (banner) banner.classList.add("show");
+  if (btn) btn.hidden = false;
+  const doLogout = async () => {
+    try {
+      await fetch("/api/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    } catch (e) { /* 忽略：本地清理掉就行 */ }
+    location.replace("/");
+  };
+  btn?.addEventListener("click", doLogout);
+  $("#remoteLogout")?.addEventListener("click", doLogout);
+}
+
+/* ---------------- 手机抽屉导航 ---------------- */
+function initNavDrawer() {
+  const btn = $("#navToggle");
+  const bar = $("#sidebar");
+  const scrim = $("#navScrim");
+  if (!btn || !bar || !scrim) return;
+
+  const open = () => {
+    bar.classList.add("open");
+    scrim.hidden = false;
+    requestAnimationFrame(() => scrim.classList.add("show"));
+    btn.setAttribute("aria-expanded", "true");
+    document.body.style.overflow = "hidden";
+  };
+  const close = () => {
+    bar.classList.remove("open");
+    scrim.classList.remove("show");
+    btn.setAttribute("aria-expanded", "false");
+    document.body.style.overflow = "";
+    setTimeout(() => { if (!bar.classList.contains("open")) scrim.hidden = true; }, 220);
+  };
+  const toggle = () => (bar.classList.contains("open") ? close() : open());
+
+  btn.addEventListener("click", toggle);
+  scrim.addEventListener("click", close);
+  // 点导航项后自动收起，避免遮住内容
+  bar.querySelectorAll(".nav-item").forEach((a) => a.addEventListener("click", close));
+  // Esc 关闭
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && bar.classList.contains("open")) close();
+  });
+  // 放大到桌面宽度时清掉状态
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 980 && bar.classList.contains("open")) close();
+  });
+  window.QAI_Nav = { open, close, toggle };
+}
+
 function bindGlobal() {
   window.addEventListener("hashchange", () => activateTab(location.hash.slice(1) || "dashboard"));
   $("#refreshBtn").addEventListener("click", async () => {
@@ -2587,8 +2658,128 @@ function bindGlobal() {
   bindMiddleScroll();
 }
 
+/* ---------------- 手机访问 ---------------- */
+let _phonePwd = "";
+
+function renderPhone(st) {
+  const on = !!st.enabled;
+
+  const status = $("#wpPhoneStatus");
+  if (status) {
+    if (st.launcher_down) {
+      status.textContent = "启动器没有响应——手机访问需要 QAI 主程序在运行。";
+      status.className = "phone-status warn";
+    } else if (on) {
+      status.textContent = `已开启 · 手机打开 ${st.url || ""}`;
+      status.className = "phone-status on";
+    } else {
+      status.textContent = "未开启";
+      status.className = "phone-status";
+    }
+  }
+
+  const ok = on && !st.launcher_down;
+  $("#wpPhoneInfo")?.classList.toggle("hidden", !ok);
+  $("#wpPhoneOff")?.classList.toggle("hidden", ok || !!st.launcher_down);
+
+  if (!ok) return;
+  if ($("#wpPhoneUrl")) $("#wpPhoneUrl").textContent = st.url || "—";
+  if ($("#wpPhoneUser")) $("#wpPhoneUser").textContent = st.user || "qai";
+  if ($("#wpPhonePwd")) {
+    const shown = _phonePwd || st.saved_password || "";
+    $("#wpPhonePwd").textContent = shown || "（远程不可见，请在运行机器人的电脑上查看）";
+  }
+  const copyBtn = $("#wpPhoneCopyPwd");
+  if (copyBtn) copyBtn.hidden = !(_phonePwd || st.saved_password);
+  const qr = $("#wpPhoneQr");
+  if (qr) qr.innerHTML = st.qr_svg || "";
+}
+
+async function loadPhone() {
+  try {
+    let st = await api("/api/phone");
+    // 手机访问始终开启：进入页面时自动启用
+    if (st && st.enabled === false && !st.launcher_down) {
+      try {
+        st = await api("/api/phone", "POST", { action: "enable" });
+        if (st && st.ok === false) st = await api("/api/phone");
+      } catch (e) {
+        // 开启失败就退回读状态，至少把地址显示出来
+        try { st = await api("/api/phone"); } catch (e2) {}
+      }
+    }
+    S.phone = st;
+    renderPhone(st);
+  } catch (e) {
+    const status = $("#wpPhoneStatus");
+    if (status) {
+      status.textContent = "读取失败：" + e.message;
+      status.className = "phone-status warn";
+    }
+  }
+}
+
+async function phoneAction(action) {
+  try {
+    const r = await api("/api/phone", "POST", { action });
+    if (r.ok === false) {
+      toast(r.error || "操作失败", "error");
+      await loadPhone();
+      return null;
+    }
+    _phonePwd = r.password || _phonePwd;
+    S.phone = r;
+    renderPhone(r);
+    // 密码常驻页面显示，不只走 toast
+    if (r.password) {
+      toast("新密码已在页面上显示，请记下来");
+    } else {
+      toast(r.message || "已保存");
+    }
+    if (action === "enable") {
+      toast("如果机器人正在运行，请完全退出 QAI 再打开，让它监听新地址", "warn");
+    }
+    return r;
+  } catch (e) {
+    toast(e.message, "error");
+    return null;
+  }
+}
+
+function bindPhone() {
+  $("#wpPhoneReset")?.addEventListener("click", async (e) => {
+    await withBusy(e.currentTarget, async () => {
+      _phonePwd = "";
+      await phoneAction("reset");
+    });
+  });
+  $("#wpPhoneCopyPwd")?.addEventListener("click", async () => {
+    const pw = _phonePwd || S.phone?.saved_password || "";
+    if (!pw) return;
+    try {
+      await navigator.clipboard.writeText(pw);
+      toast("密码已复制");
+    } catch (e) {
+      toast(pw);
+    }
+  });
+  $("#wpPhoneCopy")?.addEventListener("click", async () => {
+    const url = S.phone?.url || "";
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("地址已复制");
+    } catch (e) {
+      toast(url);
+    }
+  });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
+  initRemote();
   bindGlobal();
+  initNavDrawer();
+  bindPhone();
   initGuide();
   await loadModels().catch(() => {});
   try {

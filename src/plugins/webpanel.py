@@ -12,12 +12,15 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
 import secrets
 import subprocess
 import threading
+import time
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -37,6 +40,289 @@ MAX_BODY = 12 * 1024 * 1024
 # 同机原生程序仍可读取页面本身，这一层靠文件权限（见 launcher 的权限收紧）。
 PANEL_TOKEN = secrets.token_urlsafe(24)
 
+# ---------------------------------------------------------------- 远程访问
+#
+# 默认只监听 127.0.0.1，和以前行为一致。要让手机连进来，把 WEB_PANEL_HOST
+# 设成 0.0.0.0（或用 WEB_PANEL_REMOTE=true）。一旦对外监听，本机以外的请求
+# 必须通过密码登录；令牌随页面下发，不能单独作为远程鉴权。
+BIND_HOST = env("WEB_PANEL_HOST", "").strip()
+_REMOTE_FLAG = env_bool("WEB_PANEL_REMOTE", False)
+if not BIND_HOST:
+    # 手机访问是默认能力：没有显式配置时一律对外监听（远程仍需密码登录），
+    # 想只在本机用可以显式写 WEB_PANEL_HOST=127.0.0.1
+    BIND_HOST = "0.0.0.0"
+elif BIND_HOST in ("127.0.0.1", "localhost", "::1") and env_bool("WEB_PANEL_FORCE_REMOTE", False):
+    BIND_HOST = "0.0.0.0"
+IS_LOOPBACK_BIND = BIND_HOST in ("127.0.0.1", "localhost", "::1")
+# 只要不是只绑回环，就等于对外开了口子，必须启用登录。
+# 只绑回环以外一律视为对外，需启用登录。WEB_PANEL_REMOTE 仅作等效开关。
+REMOTE_ENABLED = (not IS_LOOPBACK_BIND) or _REMOTE_FLAG
+
+_LOOPBACK_NAMES = ("127.0.0.1", "localhost", "::1")
+# Tailscale / 运营商级 NAT 常用段，ipaddress 不认为它是 private
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _is_loopback_addr(addr: str) -> bool:
+    a = (addr or "").strip()
+    if not a:
+        return False
+    if a.lower() in _LOOPBACK_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(a).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_private_addr(addr: str) -> bool:
+    """局域网 / Tailscale（CGNAT 100.64/10）/ 链路本地。
+
+    注意：Python 的 ipaddress 把 100.64/10 归为 is_global=False 但 is_private=False，
+    而 Tailscale 正好用这一段，所以必须显式放行，否则组网后访问会被 403。
+    """
+    a = (addr or "").strip()
+    if not a:
+        return False
+    try:
+        ip = ipaddress.ip_address(a)
+    except ValueError:
+        return False
+    if ip.is_private or ip.is_link_local:
+        return True
+    if isinstance(ip, ipaddress.IPv4Address) and ip in _CGNAT:
+        return True
+    return False
+
+
+# 登录密码：支持明文 WEB_PANEL_PASSWORD，或哈希 WEB_PANEL_PASSWORD_HASH
+# （格式 scrypt$<n>$<r>$<p>$<salt_b64>$<hash_b64>，可用 tools/panel_password.py 生成）。
+# 只存哈希更好：.env 可能被备份、被打包、被误传。
+PASSWORD_HASH = env("WEB_PANEL_PASSWORD_HASH", "").strip()
+PASSWORD_PLAIN = env("WEB_PANEL_PASSWORD", "").strip()
+REMOTE_USER = env("WEB_PANEL_USER", "qai") or "qai"
+SESSION_HOURS = max(1, env_int("WEB_PANEL_SESSION_HOURS", 24 * 7))
+
+_COOKIE_NAME = "qai_session"
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2 ** 14, 8, 1
+_sessions: dict[str, float] = {}
+_sessions_lock = threading.Lock()
+_login_fails: dict[str, tuple[int, float]] = {}
+_login_lock = threading.Lock()
+LOGIN_MAX_FAILS = 5
+LOGIN_LOCK_SECONDS = 300
+
+
+def _hash_password(password: str, salt: bytes | None = None) -> str:
+    salt = salt or secrets.token_bytes(16)
+    dk = hashlib.scrypt(
+        password.encode("utf-8"), salt=salt,
+        n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32,
+    )
+    return "scrypt${}${}${}${}${}".format(
+        _SCRYPT_N, _SCRYPT_R, _SCRYPT_P,
+        base64.b64encode(salt).decode("ascii"),
+        base64.b64encode(dk).decode("ascii"),
+    )
+
+
+def _verify_password(password: str) -> bool:
+    if not password:
+        return False
+    if PASSWORD_HASH:
+        try:
+            scheme, n, r, p, salt_b64, hash_b64 = PASSWORD_HASH.split("$")
+            if scheme != "scrypt":
+                return False
+            dk = hashlib.scrypt(
+                password.encode("utf-8"),
+                salt=base64.b64decode(salt_b64),
+                n=int(n), r=int(r), p=int(p), dklen=32,
+            )
+            return hmac.compare_digest(dk, base64.b64decode(hash_b64))
+        except Exception:
+            return False
+    if PASSWORD_PLAIN:
+        return hmac.compare_digest(password, PASSWORD_PLAIN)
+    return False
+
+
+def _login_configured() -> bool:
+    return bool(PASSWORD_HASH or PASSWORD_PLAIN)
+
+
+def _new_session() -> str:
+    sid = secrets.token_urlsafe(32)
+    with _sessions_lock:
+        now = time.time()
+        # 清理过期会话
+        for k in [k for k, exp in _sessions.items() if exp <= now]:
+            _sessions.pop(k, None)
+        _sessions[sid] = now + SESSION_HOURS * 3600
+    return sid
+
+
+def _session_valid(sid: str) -> bool:
+    if not sid:
+        return False
+    with _sessions_lock:
+        exp = _sessions.get(sid)
+        if exp is None:
+            return False
+        if exp <= time.time():
+            _sessions.pop(sid, None)
+            return False
+        return True
+
+
+def _session_drop(sid: str) -> None:
+    with _sessions_lock:
+        _sessions.pop(sid, None)
+
+
+def _login_blocked(key: str) -> bool:
+    with _login_lock:
+        n, until = _login_fails.get(key, (0, 0.0))
+        if n >= LOGIN_MAX_FAILS and time.time() < until:
+            return True
+        if n >= LOGIN_MAX_FAILS and time.time() >= until:
+            _login_fails.pop(key, None)
+        return False
+
+
+def _login_failed(key: str) -> None:
+    with _login_lock:
+        n, _ = _login_fails.get(key, (0, 0.0))
+        _login_fails[key] = (n + 1, time.time() + LOGIN_LOCK_SECONDS)
+
+
+def _login_ok(key: str) -> None:
+    with _login_lock:
+        _login_fails.pop(key, None)
+
+
+_LOGIN_PAGE = """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d13">
+<title>QAI · 登录</title>
+<link rel="icon" href="/qai-icon-64.png" type="image/png">
+<style>
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+  background: radial-gradient(1200px 600px at 50% -10%, #16233a 0%, #0a0c12 55%);
+  color: #e8ecf5; font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+.card {
+  width: 100%; max-width: 380px; padding: 30px 26px; border-radius: 18px;
+  background: rgba(20, 26, 38, .82); border: 1px solid rgba(120, 150, 210, .18);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .5); backdrop-filter: blur(14px);
+}
+.logo { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center;
+  background: linear-gradient(140deg, #4c7dff, #8b5cf6); font-size: 24px; margin-bottom: 16px; }
+h1 { font-size: 19px; margin: 0 0 6px; font-weight: 650; letter-spacing: .2px; }
+p.sub { margin: 0 0 22px; font-size: 13px; color: #8b95ab; line-height: 1.55; }
+label { display: block; font-size: 12.5px; color: #9aa5bd; margin-bottom: 7px; }
+input {
+  width: 100%; padding: 12px 13px; font-size: 16px; border-radius: 11px;
+  border: 1px solid rgba(120, 150, 210, .22); background: rgba(8, 12, 20, .75);
+  color: #e8ecf5; outline: none; transition: border-color .16s, box-shadow .16s;
+}
+input:focus { border-color: #4c7dff; box-shadow: 0 0 0 3px rgba(76, 125, 255, .18); }
+button {
+  width: 100%; margin-top: 18px; padding: 12px; font-size: 15px; font-weight: 600;
+  border: 0; border-radius: 11px; cursor: pointer; color: #fff;
+  background: linear-gradient(140deg, #4c7dff, #7c5cf6);
+  transition: transform .12s, filter .16s;
+}
+button:hover { filter: brightness(1.08); }
+button:active { transform: scale(.985); }
+button:disabled { opacity: .6; cursor: default; }
+.msg { min-height: 20px; margin-top: 13px; font-size: 13px; color: #ff8080; }
+.remember { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13px; color: #9aa5bd; }
+.remember input { width: 16px; height: 16px; padding: 0; margin: 0; accent-color: #4c7dff; }
+.forgot { margin-top: 12px; text-align: center; font-size: 13px; }
+.forgot a { color: #7ba7ff; text-decoration: none; }
+.forgot a:hover { text-decoration: underline; }
+.reset-panel { margin-top: 14px; padding: 13px 14px; border-radius: 11px;
+  background: rgba(8, 12, 20, .6); border: 1px solid rgba(120, 150, 210, .18); }
+.reset-panel.hidden { display: none; }
+.reset-panel code { background: rgba(0,0,0,.4); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.reset-panel .steps { margin: 0; padding-left: 18px; font-size: 12.5px; color: #b8c1d4; line-height: 1.9; }
+</style>
+</head>
+<body>
+<form class="card" id="f">
+  <div class="logo">🔒</div>
+  <h1>QAI 管理控制台</h1>
+  <p class="sub">这台控制器只允许已登录的设备访问。</p>
+  <label for="u">用户名</label>
+  <input id="u" name="u" autocomplete="username" placeholder="qai">
+  <label for="p" style="margin-top:14px">密码</label>
+  <input id="p" name="p" type="password" autocomplete="current-password" required>
+  <div class="remember">
+    <input id="r" name="r" type="checkbox" checked>
+    <label for="r" style="margin:0">记住这台设备</label>
+  </div>
+  <button id="b" type="submit">登录</button>
+  <div class="msg" id="m"></div>
+  <div class="forgot">
+    <a href="#" id="forgotLink">忘记密码？</a>
+  </div>
+  <div class="reset-panel hidden" id="resetPanel">
+    <p class="sub" style="margin:0 0 12px">
+      密码只存哈希，找不回来，只能重置。<br>
+      <b>重置必须在运行机器人的那台电脑上操作</b>（本机访问免登录）。
+    </p>
+    <ol class="steps">
+      <li>回到电脑，打开 QAI</li>
+      <li>管理台左侧点「手机」</li>
+      <li>点「重置密码」，新密码会显示出来</li>
+    </ol>
+    <p class="sub" style="margin:12px 0 0">
+      打不开管理台时，删掉 <code>.env</code> 里的这一行，重启 QAI 即可恢复成只允许本机：
+      <br><code>WEB_PANEL_HOST=0.0.0.0</code>
+    </p>
+  </div>
+</form>
+<script>
+(function () {
+  var f = document.getElementById("f"), m = document.getElementById("m"), b = document.getElementById("b");
+  document.getElementById("forgotLink").addEventListener("click", function (e) {
+    e.preventDefault();
+    document.getElementById("resetPanel").classList.toggle("hidden");
+  });
+  f.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    m.textContent = ""; b.disabled = true;
+    try {
+      var r = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user: document.getElementById("u").value,
+          password: document.getElementById("p").value,
+          remember: document.getElementById("r").checked
+        })
+      });
+      var d = await r.json().catch(function () { return {}; });
+      if (r.ok && d.ok) { location.replace("/"); return; }
+      m.textContent = d.error || "登录失败";
+    } catch (err) {
+      m.textContent = "无法连接服务器";
+    }
+    b.disabled = false;
+  });
+})();
+</script>
+</body>
+</html>
+"""
+
 _STATIC_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".css": "text/css; charset=utf-8",
@@ -50,7 +336,11 @@ _STATIC_FILES = (
     "/favicon.svg", "/manifest.webmanifest",
     "/qai-icon.png", "/qai-icon-64.png", "/qai-cover.png",
 )
-
+# 远程访问、尚未登录时仍然放行的静态资源（登录页与它自己的样式）
+_LOGIN_PUBLIC = (
+    "/app.css", "/theme.css", "/theme.js", "/favicon.svg",
+    "/manifest.webmanifest", "/qai-icon.png", "/qai-icon-64.png",
+)
 
 # ---------------------------------------------------------------- 小工具
 def _mood_label(v: float) -> str:
@@ -299,6 +589,215 @@ def _persona_payload(pid: str) -> dict:
         "text": personas.text_of(pid),
         "avatar": personas.avatar_url(pid),
     }
+
+
+# ---------------------------------------------------------------- 手机访问
+#
+# 管理台在 8081，启动器在 8082。浏览器直接跨端口调 8082 会被同源挡住，
+# 而且启动器接口还要令牌。所以统一由这里代理一层：
+# 管理台自己带令牌访问本机 8082，前端只跟 8081 说话。
+
+def _launcher_base() -> str:
+    port = max(1, env_int("LAUNCHER_PORT", 8082))
+    return f"http://127.0.0.1:{port}"
+
+
+def _launcher_token() -> str:
+    """读启动器落盘的令牌（启动器每次启动重写 data/api_token）。
+
+    这个文件只对本机用户可读，权限收在数据目录里。
+    """
+    # 允许用环境变量覆盖，便于测试与自定义数据目录
+    override = env("QAI_DATA_DIR", "").strip()
+    base = Path(override) if override else (ROOT / "data")
+    p = base / "api_token"
+    try:
+        if p.is_file():
+            return p.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _launcher_call(path: str, method: str = "GET", body: dict | None = None) -> tuple[int, dict]:
+    import urllib.error
+    import urllib.request
+
+    url = _launcher_base().rstrip("/") + path
+    data = json.dumps(body or {}).encode("utf-8") if method == "POST" else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    tok = _launcher_token()
+    if tok:
+        req.add_header("X-QAI-Token", tok)
+    try:
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "replace")
+        try:
+            return e.code, json.loads(raw)
+        except Exception:
+            return e.code, {"ok": False, "error": raw[:200]}
+    except Exception as e:
+        return 503, {"ok": False, "error": f"启动器未响应：{e}"}
+
+
+# ---------------------------------------------------------------- 手机访问
+#
+# 实现在 webpanel 内，不依赖 8082 启动器：管理台可能随 bot.py 单独运行。
+
+def _lan_ip() -> str:
+    import socket as _sock
+    s = _sock.socket(_sock.AF_INET, _sock.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
+def _random_password() -> str:
+    """不用抄错的密码：四段三字符，去掉 i l o 0 1 这类易混字符。"""
+    alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
+    return "-".join(
+        "".join(secrets.choice(alphabet) for _ in range(3)) for _ in range(4)
+    )
+
+
+def _qr_svg(text: str) -> str:
+    if not text:
+        return ""
+    try:
+        import io as _io
+        import segno
+        buf = _io.BytesIO()
+        segno.make(text, error="m").save(
+            buf, kind="svg", scale=4, border=2, dark="#0b0e15", light="#ffffff"
+        )
+        return buf.getvalue().decode("utf-8")
+    except Exception:
+        return ""
+
+
+_PHONE_PWD_FILE = None  # 延迟解析：ROOT 在运行期可能被测试替换
+
+
+def _phone_pwd_file() -> Path:
+    override = env("QAI_DATA_DIR", "").strip()
+    base = Path(override) if override else (ROOT / "data")
+    return base / "phone_password.txt"
+
+
+def _remember_password(pw: str) -> None:
+    """把明文密码留一份在本机，方便用户随时查看。
+
+    只在 data/ 下，不写进 .env —— .env 会被打包和备份，
+    里面躺明文密码等于把钥匙一起发出去。
+    本机访问才能读到，远程必须登录。
+    """
+    try:
+        f = _phone_pwd_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(pw, encoding="utf-8")
+        try:
+            os.chmod(f, 0o600)
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"[webpanel] 记录手机密码失败：{e}")
+
+
+def _recall_password() -> str:
+    try:
+        f = _phone_pwd_file()
+        if f.is_file():
+            return f.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _phone_access_status() -> dict:
+    pairs = _read_env_pairs()
+    host = (pairs.get("WEB_PANEL_HOST") or "").strip()
+    enabled = host not in ("", "127.0.0.1", "localhost", "::1")
+    ip = _lan_ip()
+    port = str(PORT)
+    user = (pairs.get("WEB_PANEL_USER") or "qai").strip() or "qai"
+    has_pwd = bool(
+        (pairs.get("WEB_PANEL_PASSWORD_HASH") or "").strip()
+        or (pairs.get("WEB_PANEL_PASSWORD") or "").strip()
+    )
+    url = f"http://{ip}:{port}"
+    return {
+        "ok": True,
+        "enabled": enabled,
+        "host": host,
+        "has_password": has_pwd,
+        "user": user,
+        "port": port,
+        "lan_ip": ip,
+        "url": url,
+        "qr_svg": _qr_svg(url) if enabled else "",
+        # 当前进程实际绑在哪儿，用来提醒「改了要重启」
+        "active_bind": BIND_HOST,
+        "restart_needed": enabled and IS_LOOPBACK_BIND,
+        # 本机存的那份明文密码。调用方会判断是不是本机，再决定要不要下发。
+        "_saved_password": _recall_password(),
+    }
+
+
+def _phone_access_enable() -> dict:
+    pairs = _read_env_pairs()
+    updates = {"WEB_PANEL_HOST": "0.0.0.0"}
+    has_pwd = bool(
+        (pairs.get("WEB_PANEL_PASSWORD_HASH") or "").strip()
+        or (pairs.get("WEB_PANEL_PASSWORD") or "").strip()
+    )
+    password = ""
+    # 有哈希但没有本地明文记录时，说明密码已不可取回，重设一个新的。
+    recalled = _recall_password()
+    if not has_pwd or not recalled:
+        password = _random_password()
+        updates["WEB_PANEL_PASSWORD_HASH"] = _hash_password(password)
+        updates["WEB_PANEL_USER"] = (pairs.get("WEB_PANEL_USER") or "qai").strip() or "qai"
+    _update_env(updates)
+    if password:
+        _remember_password(password)
+    st = _phone_access_status()
+    st["password"] = password
+    st["message"] = "已开启，请记下密码" if password else "已开启"
+    logger.info(f"[webpanel] 手机访问已开启：{st['url']}")
+    return st
+
+
+def _phone_access_disable() -> dict:
+    _update_env({"WEB_PANEL_HOST": "127.0.0.1"})
+    st = _phone_access_status()
+    st["message"] = "已关闭，管理台只监听本机"
+    logger.info("[webpanel] 手机访问已关闭")
+    return st
+
+
+def _phone_access_reset() -> dict:
+    password = _random_password()
+    pairs = _read_env_pairs()
+    _update_env({
+        "WEB_PANEL_PASSWORD_HASH": _hash_password(password),
+        "WEB_PANEL_USER": (pairs.get("WEB_PANEL_USER") or "qai").strip() or "qai",
+    })
+    _remember_password(password)
+    st = _phone_access_status()
+    st["password"] = password
+    st["message"] = "密码已重置"
+    logger.info("[webpanel] 手机访问密码已重置")
+    return st
 
 
 def _models_payload() -> dict:
@@ -618,35 +1117,92 @@ def _open_sticker_folder() -> None:
 
 # ---------------------------------------------------------------- HTTP Handler
 class _Handler(BaseHTTPRequestHandler):
+    # 每个请求都要发额外响应头（Set-Cookie）时的暂存区，_send_* 里统一吐出
+    _extra_headers: list = []
+
     def log_message(self, *a):
         pass
 
+    def handle_one_request(self):
+        self._extra_headers = []
+        try:
+            super().handle_one_request()
+        finally:
+            self._extra_headers = []
+
     # ---- 安全：只接受同源请求，写操作再校验令牌 ----
-    def _same_site_ok(self) -> bool:
-        """挡住其它网站发起的请求。
+    def _client_is_local(self) -> bool:
+        return _is_loopback_addr(self.client_address[0])
+
+    def _session_sid(self) -> str:
+        raw = self.headers.get("Cookie") or ""
+        if not raw:
+            return ""
+        try:
+            jar = SimpleCookie()
+            jar.load(raw)
+        except Exception:
+            return ""
+        morsel = jar.get(_COOKIE_NAME)
+        return morsel.value if morsel else ""
+
+    def _authed(self) -> bool:
+        """本机免登录；远程必须持有有效会话。
+
+        远程不再单靠 X-QAI-Token：那个令牌跟着 index.html 一起下发，
+        能打开页面的人都能拿到，拿到就等于完全控制。
+        """
+        if self._client_is_local():
+            return True
+        return _session_valid(self._session_sid())
+
+    def _same_site_ok(self, allow_no_origin: bool = True) -> bool:
+        """挡住其它网站发起的跨站请求。
 
         浏览器对「简单请求」不做 CORS 预检，跨站 POST/GET 是能打进来的；
         必须在服务端看 Sec-Fetch-Site / Origin。
+
+        没有 Origin 是常态：浏览器导航、同源 GET 都不带它，非浏览器客户端
+        （curl、手机原生客户端）也不带。旧实现就是放行的，这里保持，
+        否则本机打开控制台会直接 403。真正的跨站请求会带
+        Sec-Fetch-Site: cross-site 或一个外站 Origin，两种都能挡住。
         """
-        # 只拒 cross-site；外壳 8082 用 iframe 嵌 8081，属于 same-site。
         site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
         if site == "cross-site":
             return False
         origin = (self.headers.get("Origin") or "").strip()
-        if origin:
-            try:
-                from urllib.parse import urlparse as _up
-
-                host = (_up(origin).hostname or "").lower()
-            except Exception:
-                return False
-            if host not in ("127.0.0.1", "localhost", "::1"):
-                return False
-        return True
+        if not origin:
+            return True if allow_no_origin else False
+        try:
+            host = (urlparse(origin).hostname or "").lower()
+        except Exception:
+            return False
+        if _is_loopback_addr(host):
+            return True
+        # 已开启远程访问时，允许局域网 / Tailscale 网段内的同源调用
+        if REMOTE_ENABLED and _is_private_addr(host):
+            return True
+        return False
 
     def _token_ok(self) -> bool:
         got = (self.headers.get("X-QAI-Token") or "").strip()
         return bool(got) and hmac.compare_digest(got, PANEL_TOKEN)
+
+    def _set_session_cookie(self, sid: str) -> None:
+        # 只允许 HTTP 传输时不要 Secure，否则手机直接用 http:// 访问会存不下
+        parts = [
+            f"{_COOKIE_NAME}={sid}",
+            "Path=/",
+            f"Max-Age={SESSION_HOURS * 3600}",
+            "HttpOnly",
+            "SameSite=Lax",
+        ]
+        self._extra_headers.append(("Set-Cookie", "; ".join(parts)))
+
+    def _clear_session_cookie(self) -> None:
+        self._extra_headers.append(
+            ("Set-Cookie", f"{_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax")
+        )
 
     def do_OPTIONS(self):
         # 不回 CORS 头：跨站带自定义头的请求会在预检阶段失败
@@ -655,12 +1211,17 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     # ---- 响应 ----
+    def _emit_extra_headers(self) -> None:
+        for k, v in self._extra_headers:
+            self.send_header(k, v)
+
     def _send_json(self, code: int, obj) -> None:
         body = json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self._emit_extra_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -669,6 +1230,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache)
+        self._emit_extra_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -714,6 +1276,9 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 html = body.decode("utf-8")
                 meta = f'<meta name="qai-token" content="{PANEL_TOKEN}">'
+                # 告诉前端是不是远程连接（远程才显示退出登录）
+                _mode = "1" if (REMOTE_ENABLED and not self._client_is_local()) else "0"
+                meta = meta + '<meta name="qai-remote" content="' + _mode + '">'
                 if "qai-token" in html:
                     html = re.sub(r'<meta name="qai-token"[^>]*>', meta, html, count=1)
                 elif "<head>" in html:
@@ -725,6 +1290,11 @@ class _Handler(BaseHTTPRequestHandler):
                 pass
         self._send_bytes(200, body, ctype)
         return True
+
+    def _send_login_page(self) -> None:
+        self._send_bytes(
+            200, _LOGIN_PAGE.encode("utf-8"), "text/html; charset=utf-8", cache="no-store"
+        )
 
     def _serve_sticker(self, name: str) -> None:
         """返回表情库图片（严格限制文件名，防路径穿越）。"""
@@ -758,8 +1328,20 @@ class _Handler(BaseHTTPRequestHandler):
             self._redirect("/#stickers")
             return
         if path in _STATIC_FILES:
+            # 未登录只放行登录页资源
+            if REMOTE_ENABLED and not self._authed() and path not in _LOGIN_PUBLIC:
+                if path in ("/", "/index.html"):
+                    self._send_login_page()
+                    return
+                self._send_json(401, {"ok": False, "error": "需要登录"})
+                return
             if not self._serve_static(path):
                 self._send_json(404, {"ok": False, "error": "UI 文件缺失，请检查 webpanel_ui/ 目录"})
+            return
+
+        # 远程未登录：API 一律 401，前端据此跳登录
+        if REMOTE_ENABLED and not self._authed():
+            self._send_json(401, {"ok": False, "error": "需要登录", "login_required": True})
             return
 
         try:
@@ -817,6 +1399,15 @@ class _Handler(BaseHTTPRequestHandler):
                     "restart_required": False,
                 })
                 return
+            if path == "/api/phone":
+                st = _phone_access_status()
+                # 明文密码只给本机看：远程能拿到就等于密码形同虚设
+                if self._client_is_local():
+                    st["saved_password"] = st.pop("_saved_password", "")
+                else:
+                    st.pop("_saved_password", None)
+                self._send_json(200, st)
+                return
             if path == "/api/tutorial":
                 guide = ROOT / "新手教程.md"
                 try:
@@ -873,15 +1464,88 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_json(404, {"ok": False, "error": "not found"})
 
     # ---- POST ----
+    def _handle_auth(self, path: str) -> None:
+        key = self.client_address[0]
+        if path == "/api/logout":
+            # 必须先读掉请求体再造响应：服务端发完响应就关连接，
+            # 请求体还在路上时会触发 RST，客户端拿到 ConnectionAborted。
+            try:
+                self._body_json()
+            except ValueError:
+                pass
+            if self._same_site_ok():
+                _session_drop(self._session_sid())
+                self._clear_session_cookie()
+            self._send_json(200, {"ok": True})
+            return
+
+        # 登录：允许不带 Origin 的客户端（手机直接 POST）
+        if not self._same_site_ok(allow_no_origin=True):
+            self._send_json(403, {"ok": False, "error": "拒绝来自其它网站的请求"})
+            return
+        if _login_blocked(key):
+            self._send_json(429, {
+                "ok": False,
+                "error": f"尝试次数过多，请 {LOGIN_LOCK_SECONDS // 60} 分钟后再试",
+            })
+            return
+        if not _login_configured():
+            self._send_json(503, {
+                "ok": False,
+                "error": "未配置远程访问密码，请在 .env 中设置 WEB_PANEL_PASSWORD",
+            })
+            return
+        try:
+            data = self._body_json()
+        except ValueError as e:
+            self._send_json(400, {"ok": False, "error": str(e)})
+            return
+
+        user = str(data.get("user") or "").strip() or REMOTE_USER
+        password = str(data.get("password") or "")
+        if user != REMOTE_USER or not _verify_password(password):
+            _login_failed(key)
+            self._send_json(401, {"ok": False, "error": "用户名或密码错误"})
+            return
+
+        _login_ok(key)
+        sid = _new_session()
+        self._set_session_cookie(sid)
+        logger.info(f"[webpanel] 远程登录成功：{key}")
+        self._send_json(200, {"ok": True, "expires_in": SESSION_HOURS * 3600})
+
     def do_POST(self):
         u = urlparse(self.path)
         path = u.path
+
+        # 登录 / 登出：不需要令牌，靠密码与限速保护
+        if path in ("/api/login", "/api/logout"):
+            self._handle_auth(path)
+            return
+
         # 同源 + 令牌：缺一个就拒，避免网页跨站改人设/清记忆
+        # 拒绝前也要把请求体读掉：服务端发完响应即关连接，请求体滞留会触发 RST。
         if not self._same_site_ok():
+            try:
+                self._body_json()
+            except ValueError:
+                pass
             self._send_json(403, {"ok": False, "error": "拒绝来自其它网站的请求"})
             return
         if not self._token_ok():
+            try:
+                self._body_json()
+            except ValueError:
+                pass
             self._send_json(403, {"ok": False, "error": "缺少或错误的控制令牌，请刷新页面后重试"})
+            return
+        # 远程还必须已登录：令牌是随页面下发的，单靠它挡不住拿到页面的人
+        if REMOTE_ENABLED and not self._authed():
+            try:
+                self._body_json()
+            except ValueError:
+                pass
+            self._send_json(401, {"ok": False, "error": "需要登录", "login_required": True})
             return
         try:
             data = self._body_json()
@@ -1116,6 +1780,23 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"ok": True, "tags": tags})
                 return
 
+            if path == "/api/phone":
+                act = str(data.get("action") or "").strip()
+                if act == "enable":
+                    res = _phone_access_enable()
+                elif act == "disable":
+                    res = _phone_access_disable()
+                elif act == "reset":
+                    res = _phone_access_reset()
+                else:
+                    self._send_json(200, {"ok": False, "error": f"未知操作：{act}"})
+                    return
+                # 一次性密码同样只下发给本机
+                if not self._client_is_local():
+                    res.pop("password", None)
+                res.pop("_saved_password", None)
+                self._send_json(200, res)
+                return
             if path == "/api/env/params":
                 updates = data.get("updates")
                 if not isinstance(updates, dict) or not updates:
@@ -1173,14 +1854,25 @@ def _start() -> None:
         return
     if not (UI_DIR / "index.html").is_file():
         logger.warning(f"[webpanel] 缺少前端文件：{UI_DIR / 'index.html'}")
+    if not IS_LOOPBACK_BIND and not _login_configured():
+        logger.warning(
+            "[webpanel] 正在对外监听但没有设置密码，远程请求会被拒绝。"
+            "请设置 WEB_PANEL_PASSWORD 或 WEB_PANEL_PASSWORD_HASH。"
+        )
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", PORT), _Handler)
+        server = ThreadingHTTPServer((BIND_HOST, PORT), _Handler)
     except Exception as e:
-        logger.warning(f"[webpanel] 启动失败（端口 {PORT} 可能被占用）：{e}")
+        logger.warning(f"[webpanel] 启动失败（{BIND_HOST}:{PORT} 可能被占用）：{e}")
         return
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
-    logger.info(f"[webpanel] 管理控制台已启动：http://127.0.0.1:{PORT}/")
+    if IS_LOOPBACK_BIND:
+        logger.info(f"[webpanel] 管理控制台已启动：http://127.0.0.1:{PORT}/")
+    else:
+        logger.info(
+            f"[webpanel] 管理控制台已对外监听：http://{BIND_HOST}:{PORT}/ "
+            f"（远程需登录，账号 {REMOTE_USER}）"
+        )
 
 
 # 插件加载即启动（仅一次）

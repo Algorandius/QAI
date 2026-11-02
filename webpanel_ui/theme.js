@@ -236,6 +236,13 @@
   }
 
   function bindAmbient() {
+    // 光晕固定不动：跟随鼠标会让整块背景每帧重绘，是卡顿主因。
+    // 直接设一次固定位置就返回，不再挂 pointermove。
+    root.style.setProperty("--mx", "50%");
+    root.style.setProperty("--my", "32%");
+    return;
+
+    /* 以下是原来的跟随实现，保留作参考，已不再执行。
     let raf = 0;
     let lastX = 50;
     let lastY = 32;
@@ -254,6 +261,7 @@
     window.addEventListener("pointerdown", (e) => move(e.clientX, e.clientY), { passive: true });
     root.style.setProperty("--mx", "50%");
     root.style.setProperty("--my", "32%");
+    */
   }
 
   function bindScroll() {

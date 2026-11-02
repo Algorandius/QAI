@@ -8,12 +8,14 @@
   <meta name="theme-color" content="#06131d">
   <script>
     try {
+      var _tp = new URLSearchParams(location.search).get("theme");
+      if (["blue","purple","white","gray"].indexOf(_tp) >= 0) {
+        localStorage.setItem("qai-theme", _tp);
+      }
       var savedTheme = localStorage.getItem("qai-theme");
       document.documentElement.dataset.theme = savedTheme || "blue";
-    } catch (e) {
-      document.documentElement.dataset.theme = "blue";
-    }
-  </script>
+      // 纯色模式要在首帧就套上，否则会闪一下渐变
+</script>
   <link rel="icon" href="/qai-icon-64.png" type="image/png">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/app.css">
@@ -22,7 +24,8 @@
 <body class="qai-panel">
 <div class="ambient" aria-hidden="true"></div>
 <div class="app">
-  <aside class="sidebar">
+  <div class="nav-scrim" id="navScrim" hidden></div>
+  <aside class="sidebar" id="sidebar">
     <nav class="nav" id="nav">
       <a class="nav-item active" data-tab="dashboard" href="#dashboard">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg>
@@ -56,6 +59,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm-9.5 13H8.2l-2.6-3 2.6-3h2.3L8.2 14l2.3 3Zm3.1 0h-1.5l3.4-6h1.5l-3.4 6Zm5.2 0h-2.3l2.3-3-2.3-3h2.3l2.6 3-2.6 3Z"/></svg>
         <span>指令</span>
       </a>
+      <a class="nav-item" data-tab="phone" href="#phone">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 1H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3a2 2 0 0 0-2-2Zm0 18H7V5h10v14Zm-5-2.5a1.5 1.5 0 1 1-1.5 1.5 1.5 1.5 0 0 1 1.5-1.5Z"/></svg>
+        <span>手机</span>
+      </a>
       <a class="nav-item" data-tab="settings" href="#settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.1 7.1 0 0 0-1.63-.94l-.36-2.54a.5.5 0 0 0-.5-.42h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.72 8.84a.5.5 0 0 0 .12.64l2.03 1.58c-.05.3-.07.63-.07.94s.02.64.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.05.24.25.42.5.42h3.84c.25 0 .45-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Z"/></svg>
         <span>设置</span>
@@ -69,15 +76,25 @@
 
   <main class="main">
     <header class="topbar">
+      <button class="hamburger" id="navToggle" type="button" aria-label="打开菜单" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
       <div class="topbar-title">
         <h1 id="pageTitle">概览</h1>
         <p class="muted" id="pageSub">机器人运行状态、人设和最近对话</p>
       </div>
       <div class="topbar-actions">
         <span class="persona-pill" id="topPersona">—</span>
+        <button class="btn btn-ghost" id="logoutBtn" type="button" hidden>退出</button>
         <button class="btn btn-ghost" id="refreshBtn" type="button">刷新</button>
       </div>
     </header>
+
+    <div class="remote-banner" id="remoteBanner">
+      <span id="remoteBannerText">已通过远程连接登录</span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" id="remoteLogout" type="button">退出登录</button>
+    </div>
 
     <!-- 概览 -->
     <section class="tab-panel active" id="tab-dashboard">
@@ -294,6 +311,63 @@
           <button class="btn btn-ghost btn-sm" id="reloadConfig" type="button">刷新</button>
         </div>
         <pre id="configView" class="config-view"></pre>
+      </section>
+    </section>
+
+    <section class="tab-panel" id="tab-phone">
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>手机访问</h2>
+            <p class="muted">用手机浏览器管理这个机器人；机器人仍跑在这台电脑上</p>
+          </div>
+        </div>
+
+        <div class="phone-panel">
+          <div class="phone-status" id="wpPhoneStatus">读取中…</div>
+
+          <div class="phone-info hidden" id="wpPhoneInfo">
+            <div class="phone-line">
+              <span class="phone-tag">手机打开</span>
+              <code id="wpPhoneUrl">—</code>
+              <button class="btn btn-ghost btn-sm" id="wpPhoneCopy" type="button">复制</button>
+            </div>
+            <div class="phone-line">
+              <span class="phone-tag">账号</span>
+              <code id="wpPhoneUser">qai</code>
+            </div>
+            <div class="phone-line">
+              <span class="phone-tag">密码</span>
+              <code id="wpPhonePwd">已设置（不显示）</code>
+              <button class="btn btn-ghost btn-sm" id="wpPhoneCopyPwd" type="button" hidden>复制</button>
+              <button class="btn btn-ghost btn-sm" id="wpPhoneReset" type="button">重置密码</button>
+            </div>
+            <div class="phone-qr" id="wpPhoneQr"></div>
+          </div>
+
+          <div class="phone-off" id="wpPhoneOff">
+            正在自动开启手机访问……
+            <b>电脑需要保持开机。</b>
+          </div>
+
+          <p class="hint" id="wpPhoneHint">
+            手机要连和电脑<b>同一个 WiFi</b>。用 4G 或在外网时，需要电脑和手机都装
+            <a href="https://tailscale.com/download" target="_blank" rel="noreferrer">Tailscale</a> 并登录同一账号。
+          </p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div><h2>连不上怎么办</h2><p class="muted">按顺序排查</p></div>
+        </div>
+        <ol class="phone-help">
+          <li>确认 QAI 正在运行，且机器人已启动——电脑关机或 QAI 退出后手机就打不开。</li>
+          <li>手机访问是<b>默认开启</b>的，不需要手动打开。改了配置后需要<b>完全退出 QAI 再重新打开</b>，顶部「重启」只重启机器人，不会重新加载监听设置。</li>
+          <li>确认手机和电脑连的是同一个 WiFi。公司/学校网络常开「AP 隔离」，设备之间不能互访，这种网络只能用 Tailscale。</li>
+          <li>检查 Windows 防火墙有没有放行 8081 端口。</li>
+          <li>换了网络之后 IP 会变，回这一页看最新地址。</li>
+        </ol>
       </section>
     </section>
 

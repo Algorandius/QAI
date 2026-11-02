@@ -673,22 +673,17 @@ html.no-bg-follow .ambient::after { animation-play-state: paused; }
   transition: transform .3s cubic-bezier(.22,1,.36,1), box-shadow .3s, border-color .3s;
   will-change: transform;
 }
+/* 卡片扫光与上浮效果已移除：鼠标划过不再有闪动 */
 .qai-panel .card::before, .qai-panel .stat-card::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(112deg, transparent 24%, var(--sheen) 50%, transparent 76%);
-  transform: translateX(-130%); transition: transform .72s cubic-bezier(.22,1,.36,1);
+  content: none !important;
+  display: none !important;
+  background: none !important;
 }
 .qai-panel .card:hover, .qai-panel .stat-card:hover,
 .qai-panel .quick-action:hover, .qai-panel .persona-card:hover {
-  border-color: rgba(var(--accent-rgb), .38);
-  box-shadow: 0 14px 38px rgba(0, 0, 0, .22), 0 0 0 1px rgba(var(--accent-rgb), .07);
-  transform: translateY(-2px);
-}
-.qai-panel .card:hover::before, .qai-panel .stat-card:hover::before { transform: translateX(130%); }
-.qai-panel .card:active, .qai-panel .stat-card:active,
-.qai-panel .quick-action:active, .qai-panel .persona-card:active {
-  transform: translateY(0) scale(.985);
-  transition-duration: .08s;
+  transform: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .12);
+  border-color: var(--line);
 }
 
 /* ---------- dropdown / scroll polish ---------- */
@@ -779,7 +774,6 @@ html.no-bg-follow .ambient::after { animation-play-state: paused; }
   border-radius: 10px; padding: 10px 12px;
 }
 .install-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.install-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .install-head b { font-size: 12.5px; }
 .install-head .muted { display: block; font-size: 10.5px; margin-top: 2px; }
 .install-progress {
@@ -955,4 +949,136 @@ html[data-theme="white"] .qai-panel .theme-menu-head { color: var(--muted); }
     transition-duration: .001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ============================================================
+   去渐变 · 保留光晕
+   把所有「面」的渐变改成纯色，但保留 ambient 光晕和强调色。
+   同时降低 GPU 开销：减少 backdrop-filter 和重绘。
+   ============================================================ */
+
+/* 1. 侧栏、卡片、统计卡：渐变 → 纯色 */
+.sidebar {
+  background: var(--bg) !important;
+  background-image: none !important;
+}
+.card,
+.recent-card,
+.dashboard-pair > .card {
+  background: var(--panel) !important;
+  background-image: none !important;
+}
+.stat-card {
+  background: var(--panel-2) !important;
+  background-image: none !important;
+}
+.persona-card {
+  background: var(--panel-2) !important;
+  background-image: none !important;
+}
+.modal {
+  background: var(--panel) !important;
+  background-image: none !important;
+}
+.chat-mini::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb {
+  background: var(--accent) !important;
+  background-image: none !important;
+}
+
+/* 2. 按钮：纯色，保留 hover 变亮 */
+.btn-primary {
+  background: var(--accent) !important;
+  background-image: none !important;
+}
+.btn-primary:hover {
+  background: var(--accent) !important;
+  background-image: none !important;
+  filter: brightness(1.1);
+}
+.persona-avatar,
+.brand-logo {
+  background-image: none !important;
+  background-color: var(--accent) !important;
+}
+.progress > i,
+.install-progress > i {
+  background-image: none !important;
+  background-color: var(--accent) !important;
+}
+/* 好感度条保持原来的彩色彩虹，不要压成单色 */
+.aff-bar {
+  background-image: linear-gradient(90deg, #ff5f6d, #ffc371, #47e891, #4facfe, #c471ed, #ff5f6d) !important;
+  background-color: transparent !important;
+}
+/* 顶栏底边那道光带保留（它是光晕不是渐变面） */
+.topbar::after,
+.sidebar::after { background-image: none !important; }
+
+/* 3. 性能：毛玻璃很贵，换成不透明底色 */
+.sidebar,
+.topbar,
+.nav,
+.modal,
+.modal-backdrop {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.modal-backdrop { background: rgba(0, 0, 0, .6) !important; }
+
+/* 4. 性能：动效降级——保留光晕，但去掉高频动画 */
+.ambient::before,
+.ambient::after {
+  /* 光晕本身保留，只是不再做持续位移 */
+  animation: none !important;
+}
+.guide-orb { animation: none !important; }
+/* .aff-bar 动画保留，不再禁用 */
+.stat-card::after { display: none !important; }
+
+/* 5. 性能：减少大面积 box-shadow 重绘 */
+.card,
+.stat-card,
+.recent-card {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .12) !important;
+}
+
+/* ============================================================
+   性能：光晕保持静止
+   原来光晕跟着鼠标移动，每帧都要重绘整块背景（大半径 radial-gradient），
+   这是卡顿的主因。改成固定位置，视觉上仍有光晕，但不再逐帧重算。
+   ============================================================ */
+.ambient {
+  --mx: 50% !important;
+  --my: 32% !important;
+  transition: none !important;
+}
+html.no-bg-follow .ambient { --mx: 50% !important; --my: 32% !important; }
+
+/* 滚动视差也去掉：滚动时改 CSS 变量同样触发大面积重绘 */
+.ambient::before,
+.ambient::after {
+  transform: none !important;
+}
+
+/* ============================================================
+   光圈已彻底移除
+   背景光晕、跟随鼠标、滚动视差全部关闭，只保留纯色底。
+   ============================================================ */
+.ambient,
+.ambient::before,
+.ambient::after {
+  display: none !important;
+  opacity: 0 !important;
+  animation: none !important;
+  background: none !important;
+}
+body {
+  background: var(--bg) !important;
+  background-image: none !important;
+}
+.qai-shell body,
+.qai-panel body {
+  background: var(--bg) !important;
+  background-image: none !important;
 }

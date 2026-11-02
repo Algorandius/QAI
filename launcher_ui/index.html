@@ -10,10 +10,8 @@
     try {
       var savedTheme = localStorage.getItem("qai-theme");
       document.documentElement.dataset.theme = savedTheme || "blue";
-    } catch (e) {
-      document.documentElement.dataset.theme = "blue";
-    }
-  </script>
+      // 纯色模式要在首帧就套上，否则会闪一下渐变
+</script>
   <link rel="icon" href="/qai-icon-64.png" type="image/png">
   <link rel="stylesheet" href="/app.css">
   <link rel="stylesheet" href="/theme.css">
@@ -155,32 +153,6 @@
           <label class="switch"><input type="checkbox" id="toggleJiggle" checked><i></i></label>
         </div>
         <div class="switch-row">
-          <div><b>背景跟随鼠标</b><span>光晕随鼠标位置移动</span></div>
-          <label class="switch"><input type="checkbox" id="toggleBgFollow" checked><i></i></label>
-        </div>
-        <div class="glow-settings" id="glowSettings">
-          <div class="glow-row">
-            <span>光圈大小</span>
-            <input type="range" id="glowSize" min="60" max="180" step="5" value="100" aria-label="光圈大小">
-            <b id="glowSizeValue">100%</b>
-          </div>
-          <div class="glow-row">
-            <span>光圈颜色</span>
-            <input type="color" id="glowColor" value="#4da3ff" aria-label="光圈颜色">
-            <button class="btn btn-ghost btn-sm" id="glowReset" type="button">跟随主题</button>
-          </div>
-          <div class="glow-row glow-shape-row">
-            <span>光圈形态</span>
-            <div class="glow-shapes">
-              <button class="glow-shape active" data-shape="soft" type="button">柔和圆</button>
-              <button class="glow-shape" data-shape="wide" type="button">横向椭圆</button>
-              <button class="glow-shape" data-shape="leaf" type="button">叶片</button>
-              <button class="glow-shape" data-shape="ring" type="button">光环</button>
-            </div>
-          </div>
-          <p class="hint">大小控制光圈范围；颜色可选任意色；四种形态分别是柔和圆、横向椭圆、叶片和光环。</p>
-        </div>
-        <div class="switch-row">
           <div><b>界面布局</b><span>拖动排序、拖右下角缩放；布局期间卡片不可点击</span></div>
           <label class="switch"><input type="checkbox" id="toggleCardDrag"><i></i></label>
         </div>
@@ -318,6 +290,8 @@
         </select>
       </label>
       <p class="hint">选「只关界面」后，机器人和启动器会留在后台；想再看到界面，再双击一次 QAI 即可（不会重复启动）。</p>
+
+
 
       <div class="modal-actions">
         <button class="btn btn-ghost" id="tutorialBtn" type="button">新手教程</button>

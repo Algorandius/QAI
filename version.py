@@ -5,7 +5,7 @@ launcher.py、build_portable.py、updater.py 都从这里读，避免版本号�
 """
 from __future__ import annotations
 
-VERSION = "1.3.1"
+VERSION = "1.4.2"
 
 # 启动器接口版本：launcher.py 的 /api 有增减时 +1，界面用它对不上会提示「启动器是旧版」。
 # 1.3.0 新增的 /api/commands、/api/diary 在 webpanel（8081）里，不影响这个值。

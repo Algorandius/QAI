@@ -9,12 +9,12 @@
 NapCat + NoneBot2 + OneBot v11  
 No Python install, no config files to hand-edit, no terminal needed
 
-[**Download QAI 1.3.1**](https://github.com/Algorandius/QAI/releases/latest) ·
+[**Download QAI 1.4.2**](https://github.com/Algorandius/QAI/releases/latest) ·
 [Tutorial (Chinese)](新手教程.md) ·
 [Report an issue](https://github.com/Algorandius/QAI/issues)
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)
-![Version](https://img.shields.io/badge/version-1.3.1-6C5CE7)
+![Version](https://img.shields.io/badge/version-1.4.2-6C5CE7)
 ![License](https://img.shields.io/badge/license-MIT-2ECC71)
 
 [简体中文](README.md) · English
@@ -35,6 +35,13 @@ QAI bundles everything a QQ chatbot needs into one desktop app:
 
 One window covers the whole path from install to chatting.
 
+## What's new in 1.4.2
+
+- **Phone access** — the **Phone** page in the web panel shows a URL and a QR code. Open it on your phone over the same Wi-Fi and manage the bot from there. Always on, no setup required.
+- **Remote login** — access from another device requires a password; the session lasts 7 days. Only a scrypt hash is stored, and the password can be reset from the desktop.
+- **Mobile layout** — narrow screens get a single-column layout with a hamburger menu on the top left that opens the full sidebar.
+- **Works outside the LAN** — pair with Tailscale to reach the machine from anywhere, no public IP needed.
+
 ## What's new in 1.3.1
 
 - **Diaries** — one per group *and* per persona, written in that persona's own voice. Generated daily at 23:30 and browsable from the web panel.
@@ -48,7 +55,7 @@ One window covers the whole path from install to chatting.
 
 ### 1. Download and run
 
-Grab **`QAI-Setup-1.3.1.exe`** (about 21 MB) from [Releases](https://github.com/Algorandius/QAI/releases/latest). Double-click, pick a folder, and the installer handles the rest: verify → extract → create a desktop shortcut → launch.
+Grab **`QAI-Setup-1.4.2.exe`** (about 21 MB) from [Releases](https://github.com/Algorandius/QAI/releases/latest). Double-click, pick a folder, and the installer handles the rest: verify → extract → create a desktop shortcut → launch.
 
 The full package is embedded in the installer, so **installation needs no network access** — you can hand the single file to someone else and it just works.
 

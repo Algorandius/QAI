@@ -1536,7 +1536,13 @@ _BOT_PROC: subprocess.Popen | None = None
 # --no-dialog 时置 True：自动测试里不要弹出会阻塞的消息框
 _DIALOG_DISABLED = False
 # 写接口令牌：每次启动随机生成，只注入给同源页面。
+# 另外落一份到 data/api_token（本机文件权限保护），
+# 供 8081 管理台的「手机」页代理调用——它跨端口拿不到注入的令牌。
 _API_TOKEN = secrets.token_urlsafe(24)
+try:
+    (DATA_DIR / "api_token").write_text(_API_TOKEN, encoding="utf-8")
+except Exception:
+    pass
 # 机器人是不是"用户希望它在跑"（看门狗据此决定要不要自动拉起）
 _BOT_WANTED = False
 # 看门狗的重启配额：时间窗内最多重启几次，避免「起来又死」无限闪烁
@@ -2028,6 +2034,138 @@ def stop_bot() -> dict:
         _write_pids()
         log("[launcher] 机器人已停止")
         return {"ok": True, "message": "机器人已停止"}
+
+
+# ---------------------------------------------------------------- 手机访问
+#
+# 开启时自动生成密码、写入 .env、探测本机地址并给出访问网址。
+
+
+def _lan_ip() -> str:
+    """本机在局域网里的地址；拿不到就退回 127.0.0.1。"""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # 不会真的发包，只是让系统选出默认出口网卡
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
+
+
+def _make_password_hash(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
+    import base64 as _b64
+    return "scrypt${}${}${}${}${}".format(
+        2 ** 14, 8, 1,
+        _b64.b64encode(salt).decode("ascii"),
+        _b64.b64encode(dk).decode("ascii"),
+    )
+
+
+def _random_password() -> str:
+    """生成便于手输的密码：四段三字符。"""
+    alphabet = "abcdefghjkmnpqrstuvwxyz23456789"  # 去掉 i l o 0 1 这类易混字符
+    groups = ["".join(secrets.choice(alphabet) for _ in range(3)) for _ in range(4)]
+    return "-".join(groups)
+
+
+def _qr_svg(text: str) -> str:
+    """把地址画成二维码 SVG。segno 是纯 Python，不额外带二进制依赖。"""
+    if not text:
+        return ""
+    try:
+        import io as _io
+        import segno
+        buf = _io.BytesIO()
+        segno.make(text, error="m").save(
+            buf, kind="svg", scale=4, border=2, dark="#0b0e15", light="#ffffff"
+        )
+        return buf.getvalue().decode("utf-8")
+    except Exception as e:
+        log(f"[launcher] 生成二维码失败: {e}")
+        return ""
+
+
+def phone_access_status() -> dict:
+    """手机访问当前状态，供设置页展示。"""
+    env = _read_env()
+    host = (env.get("WEB_PANEL_HOST") or "").strip()
+    remote = (env.get("WEB_PANEL_REMOTE") or "").strip().lower() in ("1", "true", "yes", "on")
+    enabled = host not in ("", "127.0.0.1", "localhost", "::1") or remote
+    has_hash = bool((env.get("WEB_PANEL_PASSWORD_HASH") or "").strip())
+    has_plain = bool((env.get("WEB_PANEL_PASSWORD") or "").strip())
+    ip = _lan_ip()
+    port = (env.get("WEB_PANEL_PORT") or "8081").strip() or "8081"
+    user = (env.get("WEB_PANEL_USER") or "qai").strip() or "qai"
+    url = f"http://{ip}:{port}"
+    return {
+        "ok": True,
+        "enabled": enabled,
+        "host": host,
+        "has_password": has_hash or has_plain,
+        "user": user,
+        "port": port,
+        "lan_ip": ip,
+        "url": url,
+        "qr_svg": _qr_svg(url) if enabled else "",
+    }
+
+
+def phone_access_enable() -> dict:
+    """一键开启手机访问：补密码、开监听。"""
+    env = _read_env()
+    updates: dict[str, str] = {"WEB_PANEL_HOST": "0.0.0.0"}
+
+    has_pwd = bool((env.get("WEB_PANEL_PASSWORD_HASH") or "").strip()
+                   or (env.get("WEB_PANEL_PASSWORD") or "").strip())
+    password = ""
+    if not has_pwd:
+        password = _random_password()
+        updates["WEB_PANEL_PASSWORD_HASH"] = _make_password_hash(password)
+        updates["WEB_PANEL_USER"] = (env.get("WEB_PANEL_USER") or "").strip() or "qai"
+
+    _update_env(updates)
+    reload_env()
+
+    st = phone_access_status()
+    st["password"] = password          # 只在刚生成时返回一次，界面负责展示给用户抄
+    st["message"] = (
+        "已开启手机访问，请记下下面的密码"
+        if password else "已开启手机访问"
+    )
+    log(f"[launcher] 手机访问已开启：{st['url']}")
+    return st
+
+
+def phone_access_disable() -> dict:
+    """一键恢复为只有本机能访问。"""
+    _update_env({"WEB_PANEL_HOST": "127.0.0.1", "WEB_PANEL_REMOTE": "false"})
+    reload_env()
+    st = phone_access_status()
+    st["message"] = "已关闭手机访问，管理台只监听本机"
+    log("[launcher] 手机访问已关闭")
+    return st
+
+
+def phone_access_reset_password() -> dict:
+    """重置密码（用户忘了密码时用）。"""
+    password = _random_password()
+    _update_env({
+        "WEB_PANEL_PASSWORD_HASH": _make_password_hash(password),
+        "WEB_PANEL_USER": (_read_env().get("WEB_PANEL_USER") or "").strip() or "qai",
+    })
+    reload_env()
+    st = phone_access_status()
+    st["password"] = password
+    st["message"] = "密码已重置，请记下新密码"
+    log("[launcher] 手机访问密码已重置")
+    return st
 
 
 def shutdown_launcher() -> None:
@@ -2615,6 +2753,14 @@ class _Handler(BaseHTTPRequestHandler):
             name = f"QAI-backup-{time.strftime('%Y%m%d-%H%M')}.zip"
             _send_bytes(self, blob, "application/zip", name)
             return
+        if u.path == "/api/phone-access":
+            # 这个接口会带出密码和二维码，必须和写接口一样校验令牌。
+            # 只靠同源检查不够：不带 Origin 头的本机程序会被直接放行。
+            if not _token_ok(self):
+                _send_json(self, 403, {"ok": False, "error": "缺少或错误的控制令牌，请刷新 QAI 窗口后重试"})
+                return
+            _send_json(self, 200, phone_access_status())
+            return
         if u.path == "/api/tutorial":
             guide = ROOT / "新手教程.md"
             try:
@@ -2677,6 +2823,15 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             if u.path == "/api/update/from-file":
                 _send_json(self, 200, update_from_local(self._body_raw()))
+                return
+            if u.path == "/api/phone-access/enable":
+                _send_json(self, 200, phone_access_enable())
+                return
+            if u.path == "/api/phone-access/disable":
+                _send_json(self, 200, phone_access_disable())
+                return
+            if u.path == "/api/phone-access/reset-password":
+                _send_json(self, 200, phone_access_reset_password())
                 return
             if u.path == "/api/settings/close-behavior":
                 _send_json(self, 200, save_close_behavior(self._body_json()))

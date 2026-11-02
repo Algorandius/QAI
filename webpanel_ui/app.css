@@ -54,7 +54,7 @@ svg { width: 20px; height: 20px; fill: currentColor; }
   position: sticky; top: 0; height: 100vh;
   display: flex; flex-direction: column; gap: 18px;
   padding: 20px 14px 16px;
-  background: linear-gradient(180deg, rgba(18, 22, 33, .96), rgba(10, 12, 18, .96));
+  background: var(--bg);
   border-right: 1px solid var(--line-soft);
   backdrop-filter: blur(10px);
 }
@@ -105,7 +105,7 @@ svg { width: 20px; height: 20px; fill: currentColor; }
 
 /* ---------- 通用 ---------- */
 .card {
-  background: linear-gradient(180deg, rgba(23, 28, 42, .92), rgba(17, 21, 32, .94));
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 18px;
@@ -146,10 +146,10 @@ svg { width: 20px; height: 20px; fill: currentColor; }
 .btn:active { transform: translateY(1px); }
 .btn-primary {
   border-color: transparent; color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   box-shadow: 0 8px 22px rgba(var(--accent-rgb), .25);
 }
-.btn-primary:hover { filter: brightness(1.07); background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.btn-primary:hover { filter: brightness(1.07); background: var(--accent); }
 .btn-ghost { background: transparent; }
 .btn-danger { color: var(--red); border-color: rgba(248, 113, 113, .28); background: var(--red-soft); }
 .btn-danger:hover { background: rgba(248, 113, 113, .18); }
@@ -191,7 +191,7 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
 /* ---------- 概览 ---------- */
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .stat-card {
-  background: linear-gradient(180deg, rgba(24, 29, 43, .95), rgba(17, 21, 32, .95));
+  background: var(--panel-2);
   border: 1px solid var(--line); border-radius: 13px; padding: 14px 15px;
   position: relative; overflow: hidden; min-width: 0;
 }
@@ -211,7 +211,7 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
 .persona-avatar {
   width: 72px; height: 72px; border-radius: 22px; flex: 0 0 auto;
   display: grid; place-items: center; font-size: 28px; font-weight: 800; color: #fff;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   box-shadow: 0 12px 30px rgba(var(--accent-rgb), .3);
   overflow: hidden;
 }
@@ -277,7 +277,7 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
   background: var(--line-soft); border-radius: 99px;
 }
 .persona-quick-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   border-radius: 99px; border: 1px solid transparent;
   background-clip: padding-box;
 }
@@ -314,7 +314,7 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
 }
 .dashboard-top .chat-mini::-webkit-scrollbar { width: 7px; }
 .dashboard-top .chat-mini::-webkit-scrollbar-track { background: var(--line-soft); border-radius: 99px; }
-.dashboard-top .chat-mini::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--accent), var(--accent-2)); border-radius: 99px; }
+.dashboard-top .chat-mini::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 99px; }
 .dashboard-top .chat-mini-item { min-height: 86px; height: auto; flex: 0 0 auto; overflow: visible; }
 .chat-empty-recent { padding: 28px 10px; }
 .dashboard-pair .quick-actions {
@@ -377,7 +377,7 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
 .persona-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .persona-card {
   border: 1px solid var(--line); border-radius: 13px; padding: 15px;
-  background: linear-gradient(180deg, rgba(24, 29, 43, .86), rgba(17, 21, 32, .88));
+  background: var(--panel-2);
   display: flex; flex-direction: column; gap: 10px; position: relative; overflow: hidden;
 }
 .persona-card.current { border-color: rgba(var(--accent-rgb), .55); box-shadow: 0 0 0 1px rgba(var(--accent-rgb), .15), 0 12px 32px rgba(var(--accent-rgb), .12); }
@@ -389,7 +389,7 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
 .persona-card-avatar {
   width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center;
   font-weight: 800; color: #fff; font-size: 18px; flex: 0 0 auto;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   overflow: hidden;
 }
 .persona-card-name { font-weight: 700; font-size: 14px; display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
@@ -932,3 +932,281 @@ textarea { resize: vertical; min-height: 90px; line-height: 1.55; font-family: v
   .diary-layout { grid-template-columns: 1fr; }
   .diary-keys { max-height: 220px; }
 }
+
+/* ---------- 手机端增强 ----------
+   上面的断点只解决了「窄屏不溢出」，这里补的是「手上好不好用」：
+   底部固定导航、拇指区、安全区、够大的点按目标。
+   只在窄屏或触屏生效，桌面布局一行不动。 */
+@media (max-width: 980px) {
+  /* 顶栏吸附，滚动时始终能刷新/看当前人设 */
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    margin: -16px -14px 12px; padding: 10px 14px;
+    background: color-mix(in srgb, var(--bg, #0a0c12) 88%, transparent);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+
+  /* 点按目标不低于 40px，避免误触 */
+  .btn, .nav-item, .cmd-copy, .sublib-chip, .diary-key { min-height: 40px; }
+  .btn { padding-left: 14px; padding-right: 14px; }
+  input, select, textarea { font-size: 16px; }  /* iOS 小于 16px 会放大页面 */
+}
+
+@media (max-width: 620px) {
+  /* 概览卡片：手机上两列挤，改单列 */
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-pair { grid-template-columns: 1fr; }
+  .scene-row { gap: 8px; }
+  .card { padding: 14px 13px; }
+  .topbar-title h1 { font-size: 17px; }
+  .topbar-actions { gap: 8px; }
+  .sticker-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 9px; }
+  .diary-keys { max-height: 180px; }
+  /* 表格太宽时自己横向滚，不撑破整页 */
+  .table-wrap, .chatlog-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+/* 横屏手机：底部导航占地方，收窄 */
+@media (max-width: 980px) and (orientation: landscape) and (max-height: 480px) {
+  .nav-item { flex-direction: row; gap: 5px; min-height: 36px; padding: 5px 10px; }
+  .nav-item svg { width: 16px; height: 16px; }
+  body { padding-bottom: calc(48px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* 远程登录态提示条 */
+.remote-banner {
+  display: none; align-items: center; gap: 10px;
+  padding: 9px 13px; margin-bottom: 12px;
+  border-radius: 11px; font-size: 12.5px;
+  background: color-mix(in srgb, var(--accent, #4c7dff) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #4c7dff) 32%, transparent);
+  color: var(--text-2, #b8c1d4);
+}
+.remote-banner.show { display: flex; }
+.remote-banner .spacer { flex: 1; }
+.remote-banner .btn { min-height: 32px; padding: 5px 12px; font-size: 12.5px; }
+
+/* ---------- 手机访问页 ---------- */
+.phone-panel { display: flex; flex-direction: column; gap: 12px; }
+.phone-status { font-size: 13px; color: var(--text-2); }
+.phone-status.on { color: #4ade80; }
+.phone-status.warn { color: #fbbf24; }
+.phone-info { display: flex; flex-direction: column; gap: 9px; }
+.phone-info.hidden, .phone-off.hidden { display: none; }
+.phone-line { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.phone-tag { flex: 0 0 auto; font-size: 12px; color: var(--muted); min-width: 58px; }
+.phone-line code {
+  flex: 1 1 180px; min-width: 0;
+  /* 跟随主题：白色主题下必须是浅底深字，不能写死深色 */
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 9px; padding: 8px 11px;
+  font-family: var(--mono); font-size: 12.5px;
+  color: var(--text);
+  color: var(--accent-contrast); word-break: break-all;
+}
+.phone-qr { display: flex; justify-content: center; padding: 4px 0 2px; }
+.phone-qr svg { width: 140px; height: 140px; border-radius: 12px; background: #fff; padding: 8px; }
+.phone-qr:empty { display: none; }
+.phone-off { font-size: 12.5px; color: var(--muted); line-height: 1.8; }
+.phone-off b { color: var(--text-2); }
+.phone-help { margin: 0; padding-left: 20px; font-size: 12.5px; line-height: 1.9; color: var(--text-2); }
+.phone-help li { margin-bottom: 4px; }
+.phone-help b { color: var(--text); }
+.phone-switch { flex: 0 0 auto; }
+
+/* ============================================================
+   手机端：汉堡菜单 + 抽屉侧栏 + 全纵向布局
+   取代原来「侧栏变横向标签条」的做法，释放纵向空间。
+   ============================================================ */
+.hamburger {
+  display: none;
+  flex: 0 0 auto;
+  width: 40px; height: 40px; padding: 0;
+  border-radius: 10px; cursor: pointer;
+  background: transparent; border: 1px solid var(--line);
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 4px;
+}
+.hamburger span {
+  display: block; width: 18px; height: 2px; border-radius: 2px;
+  background: var(--text-2); transition: transform .2s, opacity .2s;
+}
+.hamburger[aria-expanded="true"] span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+.hamburger[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+.hamburger[aria-expanded="true"] span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+.nav-scrim {
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(0, 0, 0, .45);
+  opacity: 0; transition: opacity .2s;
+}
+.nav-scrim.show { opacity: 1; }
+.nav-scrim[hidden] { display: none; }
+
+@media (max-width: 980px) {
+  /* 显示汉堡按钮，顶栏横向排 */
+  .hamburger { display: flex; }
+  .topbar {
+    flex-direction: row !important;
+    align-items: center; gap: 10px;
+    position: sticky; top: 0; z-index: 40;
+    margin: -16px -14px 12px; padding: 10px 14px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .topbar-title { flex: 1 1 auto; min-width: 0; }
+  .topbar-title h1 { font-size: 16px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-title p { display: none; }
+  .topbar-actions { flex: 0 0 auto; width: auto; gap: 6px; }
+  /* 顶部按钮紧凑化，给标题让位 */
+  .topbar-actions .btn { padding: 6px 10px; font-size: 12px; min-height: 34px; }
+
+  /* 侧栏变成从左侧滑出的抽屉 */
+  .sidebar {
+    position: fixed !important;
+    top: 0; left: 0; bottom: 0;
+    width: min(78vw, 280px);
+    height: 100%;
+    z-index: 80;
+    padding: 16px 12px calc(16px + env(safe-area-inset-bottom, 0px));
+    border-right: 1px solid var(--line-soft);
+    border-bottom: 0;
+    background: var(--bg);
+    transform: translateX(-100%);
+    transition: transform .24s cubic-bezier(.22, .61, .36, 1);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  /* 抽屉里恢复竖排导航 */
+  .nav { flex-direction: column !important; gap: 3px; overflow: visible; }
+  .nav-item {
+    flex: 0 0 auto !important;
+    flex-direction: row !important;
+    justify-content: flex-start !important;
+    gap: 10px;
+    padding: 11px 12px; min-height: 44px;
+    font-size: 13.5px;
+    border-radius: 10px;
+  }
+  .nav-item span { white-space: normal; }
+  .nav-item svg { width: 19px; height: 19px; }
+  .sidebar-foot { display: block; margin-top: 14px; }
+
+  /* 取消之前的底部固定导航 */
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .main { padding: 0 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  body { padding-bottom: 0 !important; }
+}
+
+@media (max-width: 980px) {
+  /* 顶栏右侧按钮在窄屏会挤，隐藏非关键的 */
+  .topbar-actions .persona-pill {
+    max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 11.5px; padding: 5px 9px;
+  }
+  /* 防止任何子元素把页面撑出横向滚动 */
+  html, body { overflow-x: hidden; max-width: 100vw; }
+  .main, .tab-panel, .card, .grid-2, .stats-grid { min-width: 0; max-width: 100%; }
+  .card { overflow-wrap: anywhere; }
+  /* 统计卡片两列在 390px 下刚好，但卡片内边距收一点 */
+  .stats-grid { gap: 8px; }
+  .stat-card { padding: 12px 12px; }
+  .stat-value { font-size: 19px; }
+  /* 长串（如 QQ 号、网址）允许断行 */
+  .chat-row, .kv, code, pre { overflow-wrap: anywhere; word-break: break-word; }
+  /* 卡片内的横向滚动区域自己滚，不要撑破页面 */
+  .table-wrap, .chatlog-scroll, .config-view { max-width: 100%; overflow-x: auto; }
+}
+@media (max-width: 420px) {
+  .topbar-actions .persona-pill { display: none; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* 手机端修正：侧栏已是 fixed，网格必须变成单列，否则仍会留出 238px 空列 */
+@media (max-width: 980px) {
+  .app {
+    display: block !important;
+    grid-template-columns: none !important;
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  .sidebar {
+    /* 已经是 fixed，这里确保不参与文档流 */
+    position: fixed !important;
+  }
+  .main {
+    width: 100%;
+    max-width: 100vw;
+    padding: 0 14px calc(28px + env(safe-area-inset-bottom, 0px)) !important;
+    box-sizing: border-box;
+  }
+  /* 顶栏用负边距铺满；左右与 main 的 padding 对齐 */
+  .topbar {
+    margin: 0 -14px 12px !important;
+    padding: 10px 14px !important;
+    position: sticky; top: 0; z-index: 40;
+    box-sizing: border-box;
+  }
+  .stats-grid,
+  .grid-2,
+  .dashboard-pair,
+  .persona-config-fields,
+  .form-grid,
+  .form-grid.wide {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .card, .tab-panel { width: 100%; box-sizing: border-box; }
+}
+
+/* 顶栏右侧的 pill 是撑破视口的元凶：它不换行、不收缩。
+   窄屏直接隐藏，信息在下面的卡片里都有。 */
+@media (max-width: 980px) {
+  .topbar-actions .persona-pill { display: none !important; }
+  .topbar-actions { flex: 0 0 auto; }
+  .topbar-title { overflow: hidden; }
+  .topbar-title h1 {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* [hidden] 必须压过任何 display 规则，否则「退出」按钮会在本机模式下也显示并撑破顶栏 */
+[hidden] { display: none !important; }
+
+/* ============================================================
+   手机抽屉：导航贴顶，状态条沉底
+   只保留这一套规则，不要再叠加其它 order 设定。
+   ============================================================ */
+@media (max-width: 980px) {
+  #sidebar {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 8px;
+    padding-top: 14px;
+  }
+  #sidebar > .nav {
+    flex: 0 0 auto;
+    margin: 0 0 auto 0;   /* 把剩余空间都推到下方，状态条自然落到底 */
+  }
+  #sidebar > .sidebar-foot {
+    flex: 0 0 auto;
+    margin: 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--line-soft);
+  }
+}
+
+/* 手机页：用两个明确按钮代替开关 */
+.phone-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.phone-actions .btn { min-height: 34px; padding: 6px 14px; }
+.phone-actions .btn:disabled { opacity: .4; cursor: not-allowed; }
